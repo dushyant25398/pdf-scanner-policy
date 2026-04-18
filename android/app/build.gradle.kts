@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -8,7 +10,7 @@ plugins {
 android {
     namespace = "com.codewearlabs.pdfscanner"
     compileSdk = 36
-    buildToolsVersion = "34.0.0"
+    buildToolsVersion = "35.0.0"
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -22,22 +24,22 @@ android {
 
     signingConfigs {
         create("release") {
-            val keyProps = java.util.Properties()
-            val keyPropsFile = rootProject.file("key.properties")
-            if (keyPropsFile.exists()) {
-                keyProps.load(java.io.FileInputStream(keyPropsFile))
+            val keystoreProperties = Properties()
+            val keystorePropertiesFile = rootProject.file("key.properties")
+            if (keystorePropertiesFile.exists()) {
+                keystoreProperties.load(keystorePropertiesFile.inputStream())
             }
 
-            keyAlias = keyProps.getProperty("keyAlias")
-            keyPassword = keyProps.getProperty("keyPassword")
-            storeFile = keyProps.getProperty("storeFile")?.let { file(it) }
-            storePassword = keyProps.getProperty("storePassword")
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
+            storePassword = keystoreProperties.getProperty("storePassword")
         }
     }
 
     defaultConfig {
         applicationId = "com.codewearlabs.pdfscanner"
-        minSdk = flutter.minSdkVersion
+        minSdk = 24
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName

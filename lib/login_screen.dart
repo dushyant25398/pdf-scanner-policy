@@ -23,10 +23,38 @@ class LoginScreen extends StatelessWidget {
       await FirebaseAuth.instance.signInWithCredential(credential);
 
       if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Welcome, ${googleUser.displayName}! 👋"),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pushReplacementNamed(context, '/home');
       }
     } catch (e) {
       debugPrint("Login Error: $e");
+      if (context.mounted) {
+        String errorMessage = "Login failed. Please try again.";
+        if (e.toString().contains("network_error")) {
+          errorMessage = "Network error. Check your internet connection.";
+        } else if (e.toString().contains("DEVELOPER_ERROR")) {
+          errorMessage = "Configuration error (SHA-1 mismatch). Contact support.";
+        }
+        
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Login Issue"),
+            content: Text("$errorMessage\n\nDetails: $e"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("OK"),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 

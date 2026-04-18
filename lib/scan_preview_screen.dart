@@ -1,15 +1,14 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
 class ScanPreviewScreen extends StatefulWidget {
-  final List<Uint8List> allImages;
+  final List<String> allImagePaths;
   final int initialPage;
 
   const ScanPreviewScreen({
     super.key,
-    required this.allImages,
+    required this.allImagePaths,
     this.initialPage = 0,
   });
 
@@ -65,7 +64,7 @@ class _ScanPreviewScreenState extends State<ScanPreviewScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text("Page ${_currentIndex + 1} / ${widget.allImages.length}", style: const TextStyle(color: Colors.white)),
+        title: Text("Page ${_currentIndex + 1} / ${widget.allImagePaths.length}", style: const TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -91,7 +90,7 @@ class _ScanPreviewScreenState extends State<ScanPreviewScreen> {
               Expanded(
                 child: PageView.builder(
                   controller: _pageController,
-                  itemCount: widget.allImages.length,
+                  itemCount: widget.allImagePaths.length,
                   onPageChanged: (index) {
                     setState(() {
                       _currentIndex = index;
@@ -122,8 +121,8 @@ class _ScanPreviewScreenState extends State<ScanPreviewScreen> {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(15),
-                                child: Image.memory(
-                                  widget.allImages[index],
+                                child: Image.file(
+                                  File(widget.allImagePaths[index]),
                                   fit: BoxFit.contain,
                                 ),
                               ),
@@ -189,7 +188,7 @@ class _ScanPreviewScreenState extends State<ScanPreviewScreen> {
         Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: Text(
-            "${widget.allImages.length} page(s) added",
+            "${widget.allImagePaths.length} page(s) added",
             style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
           ),
         ),

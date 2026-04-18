@@ -32,6 +32,16 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     }
   }
 
+  Future<void> _pickMoreImages() async {
+    final ImagePicker picker = ImagePicker();
+    final List<XFile> images = await picker.pickMultiImage();
+    if (images.isNotEmpty) {
+      setState(() {
+        selectedImages.addAll(images);
+      });
+    }
+  }
+
   Future<void> _showRenameDialog() async {
     TextEditingController controller = TextEditingController(
       text: "import_${DateTime.now().millisecondsSinceEpoch}",
@@ -206,26 +216,37 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
                       ),
               ),
               Padding(
-                padding: const EdgeInsets.all(20),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white),
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        ),
+                        onPressed: _pickMoreImages,
+                        icon: const Icon(Icons.add_photo_alternate),
+                        label: const Text("ADD IMAGES", style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
-                      elevation: 0,
-                    ).copyWith(
-                      overlayColor: WidgetStateProperty.all(Colors.white.withValues(alpha: 0.1)),
                     ),
-                    onPressed: selectedImages.isEmpty ? null : _showRenameDialog,
-                    icon: const Icon(Icons.picture_as_pdf),
-                    label: const Text("Create PDF", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.blue,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        ),
+                        onPressed: selectedImages.isEmpty ? null : _showRenameDialog,
+                        icon: const Icon(Icons.picture_as_pdf),
+                        label: const Text("CREATE PDF", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

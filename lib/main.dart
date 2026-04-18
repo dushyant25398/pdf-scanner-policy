@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final ImagePicker _picker = ImagePicker();
   List<File> pdfFiles = [];
-  final List<Uint8List> _scannedImages = [];
+  final List<String> _scannedImagePaths = [];
   bool isSelectionMode = false;
   Set<int> selectedIndexes = {};
   bool _isProcessingScan = false;
@@ -479,15 +479,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _isProcessingScan = true;
-      _scannedImages.clear();
+      _scannedImagePaths.clear();
     });
 
     try {
       while (mounted) {
-        debugPrint("Opening scanner flow. Images so far: ${_scannedImages.length}");
+        debugPrint("Opening scanner flow. Images so far: ${_scannedImagePaths.length}");
         
         // 1. Open Document Scanner and capture image
-        // We use pushReplacement inside onSave to go directly to Preview without flickering the Home screen
         final dynamic action = await Navigator.push(
           context,
           MaterialPageRoute(
@@ -497,30 +496,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   hideDefaultDialogs: true,
                 ),
                 onSave: (Uint8List imageBytes) async {
-                  // Process image immediately while still on the scanner screen
+                  // 2. Process & SAVE TO DISK immediately
                   final compressed = await _compressImage(imageBytes);
+                  final tempDir = await getTemporaryDirectory();
+                  final file = File('${tempDir.path}/scan_${DateTime.now().microsecondsSinceEpoch}.jpg');
+                  await file.writeAsBytes(compressed);
                   
                   if (!mounted) return;
                   setState(() {
-                    _scannedImages.add(compressed);
+                    _scannedImagePaths.add(file.path);
                   });
 
                   // TRANSITION TO PREVIEW
-                  // We push the Preview screen on top of the Scanner.
-                  // This prevents the "Home screen flicker" because the Scanner stays in the stack 
-                  // until the Preview screen returns an action.
                   if (scannerContext.mounted) {
                     final previewAction = await Navigator.of(scannerContext).push(
                       MaterialPageRoute(
                         builder: (context) => ScanPreviewScreen(
-                          allImages: List.from(_scannedImages),
-                          initialPage: _scannedImages.length - 1,
+                          allImagePaths: List.from(_scannedImagePaths),
+                          initialPage: _scannedImagePaths.length - 1,
                         ),
                       ),
                     );
                     
-                    // Once Preview returns an action (save_pdf, add_more, etc.), 
-                    // we pop the Scanner with that same action to bubble it up to the main loop.
                     if (scannerContext.mounted) {
                       Navigator.of(scannerContext).pop(previewAction);
                     }
@@ -534,30 +531,28 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!mounted) break;
 
         if (action == null) {
-          // User backed out of scanner or preview
-          _scannedImages.clear();
+          _clearTempImages();
           break;
         }
 
         // 4. Handle Preview Actions
         if (action == 'add_more') {
           if (!mounted) break;
-
-          // Short delay to ensure clean hardware handover.
-          await Future.delayed(const Duration(milliseconds: 300));
-          
-          if (!mounted) break;
-          continue; // Loop back to scanner
+          // IMPORTANT: Add a slight delay and ensure the scanner has time to dispose 
+          // before reopening to prevent "Camera in use" or UI freezes on some devices.
+          await Future.delayed(const Duration(milliseconds: 500));
+          continue; 
         } else if (action == 'save_pdf') {
           await _generatePDF(context);
           break;
         } else if (action.toString().startsWith('ocr_')) {
           int pageIndex = int.parse(action.toString().split('_')[1]);
-          await _performOCR(_scannedImages[pageIndex]);
+          final imageBytes = await File(_scannedImagePaths[pageIndex]).readAsBytes();
+          await _performOCR(imageBytes);
+          _clearTempImages();
           break;
         } else {
-          debugPrint("Unhandled action: $action. Ending session.");
-          _scannedImages.clear();
+          _clearTempImages();
           break;
         }
       }
@@ -585,6 +580,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _clearTempImages() {
+    for (var path in _scannedImagePaths) {
+      final file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    }
+    _scannedImagePaths.clear();
+  }
+
   Future<void> _generatePDF(BuildContext context) async {
     showDialog(
       context: context,
@@ -594,8 +597,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final pdf = pw.Document();
-      for (var imgBytes in _scannedImages) {
-        // Images are already compressed at capture time
+      for (var path in _scannedImagePaths) {
+        final imgBytes = await File(path).readAsBytes();
         final image = pw.MemoryImage(imgBytes);
         pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Image(image))));
       }
@@ -605,7 +608,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final fileName = await _showFileNameDialog(context);
       if (fileName == null || fileName.trim().isEmpty) {
-        _scannedImages.clear();
+        _clearTempImages();
         return;
       }
 
@@ -613,9 +616,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final file = File("${folder.path}/$fileName.pdf");
       await file.writeAsBytes(await pdf.save());
 
-      setState(() {
-        _scannedImages.clear();
-      });
+      _clearTempImages();
       
       await StorageService.saveDocumentPath(file.path);
       await loadPdfPaths();
