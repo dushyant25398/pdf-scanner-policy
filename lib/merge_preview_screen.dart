@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
-import 'package:path_provider/path_provider.dart';
+import 'services/storage_service.dart';
 
 class MergePreviewScreen extends StatefulWidget {
   final List<File> pdfs;
@@ -110,11 +110,9 @@ class _MergePreviewScreenState extends State<MergePreviewScreen> {
         inputDoc.dispose();
       }
 
-      final dir = await getApplicationDocumentsDirectory();
-      final pdfDir = Directory("${dir.path}/PDFs");
-      if (!pdfDir.existsSync()) await pdfDir.create();
+      final folder = await StorageService.getPdfDirectory();
       
-      final mergedFile = File("${pdfDir.path}/$fileName.pdf");
+      final mergedFile = File("${folder.path}/$fileName.pdf");
       await mergedFile.writeAsBytes(finalDoc.saveSync());
       finalDoc.dispose();
 

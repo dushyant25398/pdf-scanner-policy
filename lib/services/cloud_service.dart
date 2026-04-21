@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 
 class CloudService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
-  // final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   User? get currentUser => _auth.currentUser;
@@ -23,8 +23,7 @@ class CloudService {
       await ref.putFile(file);
       String downloadUrl = await ref.getDownloadURL();
       
-      // Firestore metadata disabled to prevent errors during local save
-      // await _saveMetadata(fileName, downloadUrl);
+      await _saveMetadata(fileName, downloadUrl);
       
       return downloadUrl;
     } catch (e) {
@@ -34,30 +33,30 @@ class CloudService {
   }
 
   Future<void> _saveMetadata(String name, String url) async {
-    // if (currentUser == null) return;
+    if (currentUser == null) return;
     
-    // await _firestore
-    //     .collection('users')
-    //     .doc(currentUser!.uid)
-    //     .collection('pdfs')
-    //     .doc(name) 
-    //     .set({
-    //   'name': name,
-    //   'url': url,
-    //   'createdAt': FieldValue.serverTimestamp(),
-    // });
+    await _firestore
+        .collection('users')
+        .doc(currentUser!.uid)
+        .collection('pdfs')
+        .doc(name) 
+        .set({
+      'name': name,
+      'url': url,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
-  // Stream<QuerySnapshot> getCloudPdfsStream() {
-  //   if (currentUser == null) return const Stream.empty();
-  //   
-  //   return _firestore
-  //       .collection('users')
-  //       .doc(currentUser!.uid)
-  //       .collection('pdfs')
-  //       .orderBy('createdAt', descending: true)
-  //       .snapshots();
-  // }
+  Stream<QuerySnapshot> getCloudPdfsStream() {
+    if (currentUser == null) return const Stream.empty();
+    
+    return _firestore
+        .collection('users')
+        .doc(currentUser!.uid)
+        .collection('pdfs')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
 
   Future<void> syncToCloud(List<File> files) async {
     if (currentUser == null) return;
@@ -76,13 +75,13 @@ class CloudService {
           .child('users/${currentUser!.uid}/pdfs/$fileName')
           .delete();
       
-      // Delete from Firestore disabled
-      // await _firestore
-      //     .collection('users')
-      //     .doc(currentUser!.uid)
-      //     .collection('pdfs')
-      //     .doc(fileName)
-      //     .delete();
+      // Delete from Firestore
+      await _firestore
+          .collection('users')
+          .doc(currentUser!.uid)
+          .collection('pdfs')
+          .doc(fileName)
+          .delete();
     } catch (e) {
       debugPrint("Delete Error: $e");
     }

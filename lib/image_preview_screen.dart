@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
+import 'services/storage_service.dart';
 
 class ImagePreviewScreen extends StatefulWidget {
   final List<XFile> images;
@@ -103,10 +103,8 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
         );
       }
 
-      final dir = await getApplicationDocumentsDirectory();
-      final pdfDir = Directory("${dir.path}/PDFs");
-      if (!pdfDir.existsSync()) await pdfDir.create();
-      final file = File("${pdfDir.path}/$fileName.pdf");
+      final folder = await StorageService.getPdfDirectory();
+      final file = File("${folder.path}/$fileName.pdf");
 
       await file.writeAsBytes(await pdf.save());
 

@@ -16,7 +16,7 @@ import 'package:image_picker/image_picker.dart';
 import 'services/storage_service.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:flutter_document_scanner/flutter_document_scanner.dart';
+import 'package:edge_detection/edge_detection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -26,6 +26,9 @@ import 'dart:ui';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ocr_result_screen.dart';
+import 'document_picker_screen.dart';
+import 'package:image/image.dart' as img;
+import 'package:pdfx/pdfx.dart' as pdfx;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -87,7 +90,21 @@ class _MyAppState extends State<MyApp> {
           elevation: 0,
         ),
       ),
-      home: const LoginScreen(),
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+          if (snapshot.hasData) {
+            return HomeScreen(
+              onThemeChanged: toggleTheme,
+              themeMode: _themeMode,
+            );
+          }
+          return const LoginScreen();
+        },
+      ),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/home': (context) => HomeScreen(
@@ -226,19 +243,78 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _isLoggedIn => FirebaseAuth.instance.currentUser != null;
 
   Future<void> _extractTextFromSelected(BuildContext context) async {
-    if (selectedIndexes.isEmpty) {
-      if (pdfFiles.isNotEmpty) {
-        selectedIndexes.add(0);
-      } else {
-        return;
+    if (pdfFiles.isEmpty) return;
+    
+    int index = selectedIndexes.isEmpty ? 0 : selectedIndexes.first;
+    File file = pdfFiles[index];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text("Processing all pages...", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final document = await pdfx.PdfDocument.openFile(file.path);
+      final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      StringBuffer fullText = StringBuffer();
+
+      for (int i = 1; i <= document.pagesCount; i++) {
+        final page = await document.getPage(i);
+        final pageImage = await page.render(
+          width: page.width * 2,
+          height: page.height * 2,
+          format: pdfx.PdfPageImageFormat.jpeg,
+          quality: 90,
+        );
+        
+        if (pageImage != null) {
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File('${tempDir.path}/ocr_page_$i.jpg');
+          await tempFile.writeAsBytes(pageImage.bytes);
+          
+          final inputImage = InputImage.fromFile(tempFile);
+          final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+          
+          fullText.writeln("--- Page $i ---");
+          fullText.writeln(recognizedText.text);
+          fullText.writeln();
+          
+          if (tempFile.existsSync()) await tempFile.delete();
+        }
+        await page.close();
+      }
+      
+      await document.close();
+      await textRecognizer.close();
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => OcrResultScreen(text: fullText.toString()),
+        ),
+      );
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint("OCR extraction error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to extract text: $e")),
+        );
       }
     }
-    
-    // In a real app, we'd extract the first page of the PDF as an image for OCR.
-    // For now, since we already have the OCR logic for Uint8List, we'll inform the user.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("OCR for existing PDFs coming soon! 🚀 Try it immediately after scanning a new document.")),
-    );
   }
 
   Future<void> _performOCR(Uint8List imageBytes) async {
@@ -432,6 +508,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<Uint8List> _compressImage(Uint8List list) async {
+    return await FlutterImageCompress.compressWithList(
+      list,
+      minHeight: 1920,
+      minWidth: 1080,
+      quality: 80,
+    );
+  }
+
+  void _clearTempImages() {
+    for (var path in _scannedImagePaths) {
+      final file = File(path);
+      if (file.existsSync()) {
+        file.deleteSync();
+      }
+    }
+    setState(() {
+      _scannedImagePaths.clear();
+    });
+  }
+
   @override
   void dispose() {
     _bannerAd?.dispose();
@@ -484,69 +581,50 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       while (mounted) {
-        debugPrint("Opening scanner flow. Images so far: ${_scannedImagePaths.length}");
+        final tempDir = await getTemporaryDirectory();
+        final String savePath = '${tempDir.path}/scan_${DateTime.now().microsecondsSinceEpoch}.jpg';
         
-        // 1. Open Document Scanner and capture image
+        // Use EdgeDetection for auto-crop and perspective fix
+        bool success = await EdgeDetection.detectEdge(
+          savePath,
+          canUseGallery: true,
+          androidScanTitle: 'Scanning',
+        );
+
+        if (!success || !mounted) {
+          if (_scannedImagePaths.isEmpty) break;
+          // If we already have images, don't just break, maybe user just canceled the "add more"
+          break; 
+        }
+
+        setState(() {
+          _scannedImagePaths.add(savePath);
+        });
+
+        // Show professional preview with filters
         final dynamic action = await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (scannerContext) => Scaffold(
-              body: DocumentScanner(
-                generalStyles: const GeneralStyles(
-                  hideDefaultDialogs: true,
-                ),
-                onSave: (Uint8List imageBytes) async {
-                  // 2. Process & SAVE TO DISK immediately
-                  final compressed = await _compressImage(imageBytes);
-                  final tempDir = await getTemporaryDirectory();
-                  final file = File('${tempDir.path}/scan_${DateTime.now().microsecondsSinceEpoch}.jpg');
-                  await file.writeAsBytes(compressed);
-                  
-                  if (!mounted) return;
-                  setState(() {
-                    _scannedImagePaths.add(file.path);
-                  });
-
-                  // TRANSITION TO PREVIEW
-                  if (scannerContext.mounted) {
-                    final previewAction = await Navigator.of(scannerContext).push(
-                      MaterialPageRoute(
-                        builder: (context) => ScanPreviewScreen(
-                          allImagePaths: List.from(_scannedImagePaths),
-                          initialPage: _scannedImagePaths.length - 1,
-                        ),
-                      ),
-                    );
-                    
-                    if (scannerContext.mounted) {
-                      Navigator.of(scannerContext).pop(previewAction);
-                    }
-                  }
-                },
-              ),
+            builder: (context) => ScanPreviewScreen(
+              allImagePaths: List.from(_scannedImagePaths),
+              initialPage: _scannedImagePaths.length - 1,
             ),
           ),
         );
 
         if (!mounted) break;
 
-        if (action == null) {
-          _clearTempImages();
-          break;
-        }
+        final actionName = action is Map ? action['action'] : action;
+        final ScanFilter filterType = action is Map ? action['filter'] : ScanFilter.natural;
 
-        // 4. Handle Preview Actions
-        if (action == 'add_more') {
-          if (!mounted) break;
-          // IMPORTANT: Add a slight delay and ensure the scanner has time to dispose 
-          // before reopening to prevent "Camera in use" or UI freezes on some devices.
+        if (actionName == 'add_more') {
           await Future.delayed(const Duration(milliseconds: 500));
           continue; 
-        } else if (action == 'save_pdf') {
-          await _generatePDF(context);
+        } else if (actionName == 'save_pdf') {
+          await _generatePDF(context, filter: filterType);
           break;
-        } else if (action.toString().startsWith('ocr_')) {
-          int pageIndex = int.parse(action.toString().split('_')[1]);
+        } else if (actionName.toString().startsWith('ocr_')) {
+          int pageIndex = int.parse(actionName.toString().split('_')[1]);
           final imageBytes = await File(_scannedImagePaths[pageIndex]).readAsBytes();
           await _performOCR(imageBytes);
           _clearTempImages();
@@ -565,30 +643,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // _openPreview is no longer needed with the direct navigation from onSave
-  // but we can keep it as a fallback or remove it. Let's remove to clean up.
-
-  Future<Uint8List> _compressImage(Uint8List list) async {
-    // Quality 85 is the "Sweet Spot" for professional PDF scanners:
-    // It keeps text razor sharp but reduces file size by ~80%.
-    // We also set a minWidth/Height to avoid unnecessary 4K+ processing which slows down PDF generation.
-    return await FlutterImageCompress.compressWithList(
-      list,
-      quality: 85,
-      minWidth: 1600, 
-      minHeight: 2000,
-    );
-  }
-
-  void _clearTempImages() {
-    for (var path in _scannedImagePaths) {
-      final file = File(path);
-      if (file.existsSync()) file.deleteSync();
-    }
-    _scannedImagePaths.clear();
-  }
-
-  Future<void> _generatePDF(BuildContext context) async {
+  Future<void> _generatePDF(BuildContext context, {ScanFilter filter = ScanFilter.natural}) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -598,7 +653,33 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final pdf = pw.Document();
       for (var path in _scannedImagePaths) {
-        final imgBytes = await File(path).readAsBytes();
+        Uint8List imgBytes = await File(path).readAsBytes();
+        
+        // Apply actual image processing for filters
+        if (filter != ScanFilter.natural) {
+          final decodedImage = img.decodeImage(imgBytes);
+          if (decodedImage != null) {
+            img.Image processed;
+            switch (filter) {
+              case ScanFilter.document:
+                processed = img.grayscale(decodedImage);
+                processed = img.adjustColor(processed, contrast: 1.5, brightness: 0.9);
+                break;
+              case ScanFilter.gray:
+                processed = img.grayscale(decodedImage);
+                break;
+              case ScanFilter.eco:
+                processed = img.adjustColor(decodedImage, contrast: 1.2, brightness: 1.1);
+                break;
+              default:
+                processed = decodedImage;
+            }
+            imgBytes = Uint8List.fromList(img.encodeJpg(processed, quality: 85));
+          }
+        } else {
+          imgBytes = await _compressImage(imgBytes);
+        }
+
         final image = pw.MemoryImage(imgBytes);
         pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Image(image))));
       }
@@ -806,7 +887,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -887,10 +969,65 @@ class _HomeScreenState extends State<HomeScreen> {
                     message: "Unlock professional editing and digital signatures. Login to continue! 🚀",
                   );
                 } else {
-                  setState(() => _selectedIndex = 1);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Select a PDF from 'Recent' to edit")));
-                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DocumentPickerScreen(
+                        title: "Select PDF to Edit",
+                        onFileSelected: (file) async {
+                          // Close picker
+                          Navigator.pop(context);
+
+                          // Show loading while preparing image
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(child: CircularProgressIndicator()),
+                          );
+
+                          try {
+                            File fileToEdit = file;
+                            if (file.path.toLowerCase().endsWith('.pdf')) {
+                              final document = await pdfx.PdfDocument.openFile(file.path);
+                              final page = await document.getPage(1);
+                              final pageImage = await page.render(
+                                width: page.width * 2,
+                                height: page.height * 2,
+                                format: pdfx.PdfPageImageFormat.jpeg,
+                                quality: 100,
+                              );
+
+                              final tempDir = await getTemporaryDirectory();
+                              final tempFile = File(
+                                  '${tempDir.path}/edit_temp_${DateTime.now().millisecondsSinceEpoch}.jpg');
+                              await tempFile.writeAsBytes(pageImage!.bytes);
+
+                              fileToEdit = tempFile;
+                              await page.close();
+                              await document.close();
+                            }
+
+                            if (!mounted) return;
+                            Navigator.pop(context); // Close loading
+
+                            final dynamic result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => EditPdfScreen(imageFile: fileToEdit)));
+
+                            if (result != null && result is File && mounted) {
+                              await StorageService.saveDocumentPath(result.path);
+                              await loadPdfPaths();
+                              _showInterstitialAd();
+                            }
+                          } catch (e) {
+                            if (mounted) Navigator.pop(context);
+                            debugPrint("Preparation error: $e");
+                          }
+                        },
+                      ),
+                    ),
+                  );
                 }
               },
             ),
@@ -940,6 +1077,7 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               isNew: true,
             ),
+            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -1145,15 +1283,51 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                             return;
                           }
-                          if (!mounted) return;
-                          final dynamic result = await Navigator.push(
-                            context, 
-                            MaterialPageRoute(builder: (_) => EditPdfScreen(imageFile: file))
+                          
+                          // Show loading while preparing image
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(child: CircularProgressIndicator()),
                           );
-                          if (result != null && result is File && mounted) {
-                            await StorageService.saveDocumentPath(result.path);
-                            await loadPdfPaths();
-                            _showInterstitialAd();
+
+                          try {
+                            File fileToEdit = file;
+                            if (file.path.toLowerCase().endsWith('.pdf')) {
+                              final document = await pdfx.PdfDocument.openFile(file.path);
+                              final page = await document.getPage(1);
+                              final pageImage = await page.render(
+                                width: page.width * 2,
+                                height: page.height * 2,
+                                format: pdfx.PdfPageImageFormat.jpeg,
+                                quality: 100,
+                              );
+                              
+                              final tempDir = await getTemporaryDirectory();
+                              final tempFile = File('${tempDir.path}/edit_temp_${DateTime.now().millisecondsSinceEpoch}.jpg');
+                              await tempFile.writeAsBytes(pageImage!.bytes);
+                              
+                              fileToEdit = tempFile;
+                              await page.close();
+                              await document.close();
+                            }
+
+                            if (!mounted) return;
+                            Navigator.pop(context); // Close loading
+
+                            final dynamic result = await Navigator.push(
+                              context, 
+                              MaterialPageRoute(builder: (_) => EditPdfScreen(imageFile: fileToEdit))
+                            );
+                            
+                            if (result != null && result is File && mounted) {
+                              await StorageService.saveDocumentPath(result.path);
+                              await loadPdfPaths();
+                              _showInterstitialAd();
+                            }
+                          } catch (e) {
+                            if (mounted) Navigator.pop(context);
+                            debugPrint("Preparation error: $e");
                           }
                         },
                       ),
@@ -1307,14 +1481,37 @@ class DocumentsScreen extends StatefulWidget {
   State<DocumentsScreen> createState() => _DocumentsScreenState();
 }
 
-class _DocumentsScreenState extends State<DocumentsScreen> {
+class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   List<File> pdfList = [];
+  List<File> filteredList = [];
   bool isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+  final CloudService _cloudService = CloudService();
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadPdfs();
+    _searchController.addListener(_filterDocuments);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterDocuments() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      filteredList = pdfList.where((file) {
+        final fileName = file.path.split(Platform.pathSeparator).last.toLowerCase();
+        return fileName.contains(query);
+      }).toList();
+    });
   }
 
   Future<void> _loadPdfs() async {
@@ -1322,6 +1519,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     if (mounted) {
       setState(() {
         pdfList = files;
+        filteredList = files;
+        _filterDocuments();
         isLoading = false;
       });
     }
@@ -1367,17 +1566,64 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (pdfList.isEmpty) {
+    return Column(
+      children: [
+        Container(
+          color: Theme.of(context).appBarTheme.backgroundColor,
+          child: TabBar(
+            controller: _tabController,
+            labelColor: Colors.blue,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.blue,
+            tabs: const [
+              Tab(icon: Icon(Icons.phone_android), text: "Local"),
+              Tab(icon: Icon(Icons.cloud_outlined), text: "Cloud"),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: "Search documents...",
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchController.text.isNotEmpty 
+                ? IconButton(icon: const Icon(Icons.clear), onPressed: () => _searchController.clear()) 
+                : null,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+              filled: true,
+              fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white10 : Colors.grey.shade100,
+            ),
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildLocalList(),
+              _buildCloudList(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocalList() {
+    if (filteredList.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.folder_open, size: 80, color: Colors.grey.withValues(alpha: 0.5)),
+            Icon(Icons.search_off, size: 80, color: Colors.grey.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
-            const Text(
-              "No documents yet.\nScan to create your first PDF",
+            Text(
+              _searchController.text.isEmpty 
+                ? "No local documents yet." 
+                : "No results found for \"${_searchController.text}\"",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 18),
+              style: const TextStyle(color: Colors.grey, fontSize: 18),
             ),
           ],
         ),
@@ -1387,10 +1633,10 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     return RefreshIndicator(
       onRefresh: _loadPdfs,
       child: ListView.builder(
-        padding: const EdgeInsets.all(12),
-        itemCount: pdfList.length,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 100),
+        itemCount: filteredList.length,
         itemBuilder: (context, index) {
-          final file = pdfList[index];
+          final file = filteredList[index];
           final stats = file.statSync();
           final size = (stats.size / 1024).toStringAsFixed(1);
 
@@ -1409,8 +1655,6 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (FirebaseAuth.instance.currentUser != null)
-                    const Icon(Icons.cloud_queue, color: Colors.grey, size: 16),
                 ],
               ),
               subtitle: Text("$size KB • ${stats.modified.day}/${stats.modified.month}/${stats.modified.year}"),
@@ -1443,6 +1687,119 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         },
       ),
     );
+  }
+
+  Widget _buildCloudList() {
+    if (FirebaseAuth.instance.currentUser == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.cloud_off, size: 80, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text("Login to access Cloud Library", style: TextStyle(fontSize: 18, color: Colors.grey)),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pushNamed(context, '/login'),
+              child: const Text("Go to Login"),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: _cloudService.getCloudPdfsStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(
+            child: Text("No documents in the cloud ☁️", style: TextStyle(color: Colors.grey, fontSize: 18)),
+          );
+        }
+
+        final cloudDocs = snapshot.data!.docs.where((doc) {
+          final name = (doc.data() as Map<String, dynamic>)['name'] as String;
+          return name.toLowerCase().contains(_searchController.text.toLowerCase());
+        }).toList();
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 100),
+          itemCount: cloudDocs.length,
+          itemBuilder: (context, index) {
+            final data = cloudDocs[index].data() as Map<String, dynamic>;
+            final name = data['name'];
+            final url = data['url'];
+            
+            bool isDownloaded = pdfList.any((file) => file.path.endsWith(name));
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: const Icon(Icons.cloud_done, color: Colors.blue, size: 36),
+                title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text("Available in Cloud"),
+                trailing: isDownloaded
+                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    : IconButton(
+                        icon: const Icon(Icons.download, color: Colors.blue),
+                        onPressed: () => _downloadFromCloud(name, url),
+                      ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _downloadFromCloud(String name, String url) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final dio = await _downloadFile(url, name);
+      if (dio != null) {
+        await StorageService.saveDocumentPath(dio.path);
+        await _loadPdfs();
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$name downloaded successfully! ✅")));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Download failed: $e")));
+      }
+    }
+  }
+
+  Future<File?> _downloadFile(String url, String fileName) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final folder = Directory('${directory.path}/PDFScannerPro');
+      if (!await folder.exists()) await folder.create(recursive: true);
+      
+      final filePath = '${folder.path}/$fileName';
+      final file = File(filePath);
+
+      final response = await HttpClient().getUrl(Uri.parse(url));
+      final request = await response.close();
+      await request.pipe(file.openWrite());
+      
+      return file;
+    } catch (e) {
+      debugPrint("Download error: $e");
+      return null;
+    }
   }
 }
 

@@ -5,11 +5,13 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
 import 'signature_screen.dart';
 import 'services/storage_service.dart';
+import 'package:pdfx/pdfx.dart' as pdfx;
+import 'package:path_provider/path_provider.dart';
 
 class EditElement {
   final String id;
-  Offset position;
-  double size;
+  Offset position; // Normalized 0.0 to 1.0 relative to image
+  double size;     // Normalized relative to image width
   String? text;
   Uint8List? signature;
   bool isBold;
@@ -17,7 +19,7 @@ class EditElement {
   EditElement({
     required this.id,
     required this.position,
-    this.size = 100,
+    this.size = 0.2,
     this.text,
     this.signature,
     this.isBold = false,
@@ -35,13 +37,55 @@ class EditPdfScreen extends StatefulWidget {
 
 class _EditPdfScreenState extends State<EditPdfScreen> {
   List<EditElement> elements = [];
-  bool isPdf = false;
-  final GlobalKey _stackKey = GlobalKey();
+  File? _displayImage;
+  bool _isRendering = false;
+  Size? _imageSize; // Actual image pixels
 
   @override
   void initState() {
     super.initState();
-    isPdf = widget.imageFile.path.toLowerCase().endsWith('.pdf');
+    _prepareImage();
+  }
+
+  Future<void> _prepareImage() async {
+    if (widget.imageFile.path.toLowerCase().endsWith('.pdf')) {
+      setState(() => _isRendering = true);
+      try {
+        final document = await pdfx.PdfDocument.openFile(widget.imageFile.path);
+        final page = await document.getPage(1);
+        final pageImage = await page.render(
+          width: page.width * 2,
+          height: page.height * 2,
+          format: pdfx.PdfPageImageFormat.jpeg,
+          quality: 100,
+        );
+
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File(
+            '${tempDir.path}/edit_temp_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        await tempFile.writeAsBytes(pageImage!.bytes);
+
+        final decoded = await decodeImageFromList(pageImage.bytes);
+        
+        setState(() {
+          _displayImage = tempFile;
+          _imageSize = Size(decoded.width.toDouble(), decoded.height.toDouble());
+          _isRendering = false;
+        });
+        await page.close();
+        await document.close();
+      } catch (e) {
+        debugPrint("Error rendering PDF: $e");
+        setState(() => _isRendering = false);
+      }
+    } else {
+      final bytes = await widget.imageFile.readAsBytes();
+      final decoded = await decodeImageFromList(bytes);
+      setState(() {
+        _displayImage = widget.imageFile;
+        _imageSize = Size(decoded.width.toDouble(), decoded.height.toDouble());
+      });
+    }
   }
 
   void _addText() {
@@ -64,8 +108,8 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
                   setState(() {
                     elements.add(EditElement(
                       id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      position: const Offset(100, 100),
-                      size: 24,
+                      position: const Offset(0.4, 0.4),
+                      size: 0.1, // 10% of image width
                       text: controller.text,
                     ));
                   });
@@ -90,8 +134,8 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
       setState(() {
         elements.add(EditElement(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
-          position: const Offset(100, 200),
-          size: 150,
+          position: const Offset(0.4, 0.6),
+          size: 0.3, // 30% of image width
           signature: result,
         ));
       });
@@ -102,7 +146,7 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
     setState(() {
       elements.add(EditElement(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        position: e.position + const Offset(20, 20),
+        position: e.position + const Offset(0.05, 0.05),
         size: e.size,
         text: e.text,
         signature: e.signature,
@@ -148,6 +192,8 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
   }
 
   Future<void> _saveEditedPdf() async {
+    if (_displayImage == null || _imageSize == null) return;
+    
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -156,32 +202,39 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
 
     try {
       final pdf = pw.Document();
-      final baseImageBytes = await widget.imageFile.readAsBytes();
+      final baseImageBytes = await _displayImage!.readAsBytes();
       final baseImage = pw.MemoryImage(baseImageBytes);
+
+      final pageWidth = _imageSize!.width;
+      final pageHeight = _imageSize!.height;
 
       pdf.addPage(
         pw.Page(
           margin: pw.EdgeInsets.zero,
-          pageFormat: PdfPageFormat.undefined,
+          pageFormat: PdfPageFormat(pageWidth, pageHeight),
           build: (pw.Context context) {
             return pw.Stack(
               children: [
                 pw.Image(baseImage),
                 ...elements.map((e) {
+                  final posX = e.position.dx * pageWidth;
+                  final posY = e.position.dy * pageHeight;
+                  final size = e.size * pageWidth;
+
                   if (e.signature != null) {
                     return pw.Positioned(
-                      left: e.position.dx,
-                      top: e.position.dy,
-                      child: pw.Image(pw.MemoryImage(e.signature!), width: e.size),
+                      left: posX,
+                      top: posY,
+                      child: pw.Image(pw.MemoryImage(e.signature!), width: size),
                     );
                   } else {
                     return pw.Positioned(
-                      left: e.position.dx,
-                      top: e.position.dy,
+                      left: posX,
+                      top: posY,
                       child: pw.Text(
                         e.text ?? "",
                         style: pw.TextStyle(
-                          fontSize: e.size,
+                          fontSize: size,
                           fontWeight: e.isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
                         ),
                       ),
@@ -222,7 +275,6 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
         final folder = await StorageService.getPdfDirectory();
         final file = File("${folder.path}/$fileName.pdf");
         await file.writeAsBytes(await pdf.save());
-        // NO FIRESTORE CALLS HERE - LOCAL SAVE ONLY
         if (mounted) {
           Navigator.pop(context, file);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -236,49 +288,56 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
     }
   }
 
-  Widget _buildElement(EditElement e) {
+  Widget _buildElement(EditElement e, double renderedWidth, double renderedHeight) {
     return Positioned(
-      left: e.position.dx,
-      top: e.position.dy,
+      left: e.position.dx * renderedWidth,
+      top: e.position.dy * renderedHeight,
       child: GestureDetector(
-        onPanUpdate: (details) {
+        onScaleUpdate: (details) {
           setState(() {
-            e.position += details.delta;
+            // Movement
+            double dx = e.position.dx + (details.focalPointDelta.dx / renderedWidth);
+            double dy = e.position.dy + (details.focalPointDelta.dy / renderedHeight);
+            e.position = Offset(dx.clamp(0.0, 1.0), dy.clamp(0.0, 1.0));
+            
+            // Scaling
+            if (details.scale != 1.0) {
+              e.size = (e.size * details.scale).clamp(0.01, 1.0);
+            }
           });
         },
         onLongPress: () => _showElementOptions(e),
         child: Container(
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.blue.withValues(alpha: 0.3), width: 1),
+            border: Border.all(color: Colors.blue.withOpacity(0.5), width: 1),
           ),
-          child: GestureDetector(
-            onScaleUpdate: (details) {
-              setState(() {
-                e.size = (e.size * details.scale).clamp(10, 500);
-              });
-            },
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: e.signature != null
-                      ? Image.memory(e.signature!, width: e.size)
-                      : Text(
-                          e.text ?? "",
-                          style: TextStyle(
-                            fontSize: e.size,
-                            fontWeight: e.isBold ? FontWeight.bold : FontWeight.normal,
-                            color: Colors.black,
-                          ),
-                        ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              e.signature != null
+                  ? Image.memory(e.signature!, width: e.size * renderedWidth)
+                  : Text(
+                      e.text ?? "",
+                      style: TextStyle(
+                        fontSize: e.size * renderedWidth,
+                        fontWeight: e.isBold ? FontWeight.bold : FontWeight.normal,
+                        color: Colors.black,
+                      ),
+                    ),
+              Positioned(
+                top: -15,
+                right: -15,
+                child: GestureDetector(
+                  onTap: () => _duplicateElement(e),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                    child: const Icon(Icons.copy, size: 16, color: Colors.white),
+                  ),
                 ),
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: Icon(Icons.copy, size: 14, color: Colors.blue.withValues(alpha: 0.5)),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -295,38 +354,60 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
           IconButton(icon: const Icon(Icons.check), onPressed: _saveEditedPdf),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: Container(
-                color: Colors.white,
-                child: Stack(
-                  key: _stackKey,
-                  children: [
-                    Center(child: Image.file(widget.imageFile, fit: BoxFit.contain)),
-                    ...elements.map((e) => _buildElement(e)).toList(),
-                  ],
+      body: _isRendering
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
+          : Column(
+              children: [
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (_displayImage == null || _imageSize == null) {
+                        return const Center(child: Text("Loading image...", style: TextStyle(color: Colors.white)));
+                      }
+
+                      // Calculate fit size
+                      double scale = Math.min(
+                        constraints.maxWidth / _imageSize!.width,
+                        constraints.maxHeight / _imageSize!.height,
+                      );
+                      double renderedWidth = _imageSize!.width * scale;
+                      double renderedHeight = _imageSize!.height * scale;
+
+                      return Center(
+                        child: Container(
+                          width: renderedWidth,
+                          height: renderedHeight,
+                          color: Colors.white,
+                          child: Stack(
+                            children: [
+                              Image.file(_displayImage!, fit: BoxFit.fill),
+                              ...elements.map((e) => _buildElement(e, renderedWidth, renderedHeight)).toList(),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              ),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+                  color: Colors.white,
+                  child: SafeArea(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _actionButton(Icons.text_fields, "Text", _addText),
+                        _actionButton(Icons.gesture, "Signature", _addSignature),
+                        _actionButton(
+                            Icons.delete_outline,
+                            "Clear All",
+                            () => setState(() => elements.clear())),
+                      ],
+                    ),
+                  ),
+                )
+              ],
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
-            color: Colors.white,
-            child: SafeArea(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _actionButton(Icons.text_fields, "Text", _addText),
-                  _actionButton(Icons.gesture, "Signature", _addSignature),
-                  _actionButton(Icons.delete_outline, "Clear All", () => setState(() => elements.clear())),
-                ],
-              ),
-            ),
-          )
-        ],
-      ),
     );
   }
 
@@ -344,3 +425,8 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
     );
   }
 }
+
+class Math {
+  static double min(double a, double b) => a < b ? a : b;
+}
+
