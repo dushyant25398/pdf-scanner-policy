@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
+import 'package:google_fonts/google_fonts.dart';
 import 'services/storage_service.dart';
 
 class MergePreviewScreen extends StatefulWidget {
@@ -138,128 +139,167 @@ class _MergePreviewScreenState extends State<MergePreviewScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text("Merge & Reorder", style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.transparent,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-                : [const Color(0xFFF59E0B), const Color(0xFFD97706)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+        title: Text(
+          "Merge & Reorder",
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
+            letterSpacing: -0.5,
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, color: Colors.white70, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Long press and drag to reorder",
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+      ),
+      body: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: Color(0xFFD97706), size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "Long press and drag items to change their order in the final PDF.",
+                    style: TextStyle(
+                      color: isDark ? Colors.amber[200] : const Color(0xFF92400E),
+                      fontSize: 13,
+                      height: 1.4,
                     ),
-                  ],
+                  ),
                 ),
-              ),
-              Expanded(
-                child: ReorderableListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                  itemCount: selectedPdfs.length,
-                  onReorder: _reorder,
-                  itemBuilder: (context, index) {
-                    final file = selectedPdfs[index];
-                    final fileName = file.path.split(Platform.pathSeparator).last;
-                    final fileSize = (file.lengthSync() / 1024).toStringAsFixed(1);
-
-                    return Padding(
-                      key: ValueKey(file.path),
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(15),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(15),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                            ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                              leading: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.picture_as_pdf, color: Colors.redAccent),
-                              ),
-                              title: Text(
-                                fileName,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Text(
-                                "$fileSize KB",
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Colors.white70),
-                                    onPressed: () => _removePdf(index),
-                                  ),
-                                  const Icon(Icons.drag_handle, color: Colors.white38),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              itemCount: selectedPdfs.length,
+              onReorder: _reorder,
+              proxyDecorator: (child, index, animation) {
+                return AnimatedBuilder(
+                  animation: animation,
+                  builder: (context, child) {
+                    final double animValue = Curves.easeInOut.transform(animation.value);
+                    final double elevation = lerpDouble(0, 10, animValue)!;
+                    return Material(
+                      elevation: elevation,
+                      color: Colors.transparent,
+                      shadowColor: Colors.black26,
+                      child: child,
                     );
                   },
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
-                      ),
-                      elevation: 0,
-                    ).copyWith(
-                      overlayColor: WidgetStateProperty.all(Colors.white.withValues(alpha: 0.1)),
+                  child: child,
+                );
+              },
+              itemBuilder: (context, index) {
+                final file = selectedPdfs[index];
+                final fileName = file.path.split(Platform.pathSeparator).last;
+                final fileSize = (file.lengthSync() / 1024).toStringAsFixed(1);
+
+                return Padding(
+                  key: ValueKey(file.path),
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    onPressed: selectedPdfs.length < 2 ? null : _showRenameDialog,
-                    icon: const Icon(Icons.merge_type),
-                    label: Text(
-                      "Merge ${selectedPdfs.length} Files",
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      leading: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFF4F46E5)),
+                      ),
+                      title: Text(
+                        fileName,
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        "$fileSize KB",
+                        style: TextStyle(
+                          color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.redAccent),
+                            onPressed: () => _removePdf(index),
+                          ),
+                          const Icon(Icons.drag_indicator_rounded, color: Colors.grey),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  onPressed: selectedPdfs.length < 2 ? null : _showRenameDialog,
+                  child: Text(
+                    "Merge ${selectedPdfs.length} Files",
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

@@ -17,7 +17,7 @@ class StorageService {
     return folder;
   }
 
-  static Future<void> saveDocumentPath(String path) async {
+  static Future<void> saveDocumentPath(String path, {String folder = 'Uncategorized'}) async {
     final prefs = await SharedPreferences.getInstance();
     List<String> docs = prefs.getStringList(_storageKey) ?? [];
     if (!docs.contains(path)) {
@@ -28,15 +28,48 @@ class StorageService {
     // Sync with Hive for metadata persistence
     try {
       final box = Hive.box('pdfBox');
-      final alreadyInHive = box.values.any((item) => item['path'] == path);
-      if (!alreadyInHive) {
+      final existingItemIndex = box.values.toList().indexWhere((item) => item['path'] == path);
+      
+      if (existingItemIndex == -1) {
         await box.add({
           'path': path,
           'date': DateTime.now().toIso8601String(),
+          'folder': folder,
         });
+      } else {
+        // Update folder if it changed
+        final item = box.getAt(existingItemIndex);
+        item['folder'] = folder;
+        await box.putAt(existingItemIndex, item);
       }
     } catch (e) {
-      // Box might not be open in some contexts, though it's opened in main()
+      debugPrint("Hive error: $e");
+    }
+  }
+
+  static Future<String> getDocumentFolder(String path) async {
+    try {
+      final box = Hive.box('pdfBox');
+      final item = box.values.firstWhere((element) => element['path'] == path, orElse: () => null);
+      return item?['folder'] ?? 'Uncategorized';
+    } catch (e) {
+      return 'Uncategorized';
+    }
+  }
+
+  static Future<void> updateDocumentFolder(String path, String folder) async {
+    try {
+      final box = Hive.box('pdfBox');
+      final index = box.values.toList().indexWhere((item) => item['path'] == path);
+      if (index != -1) {
+        final item = Map<String, dynamic>.from(box.getAt(index));
+        item['folder'] = folder;
+        await box.putAt(index, item);
+      } else {
+        await saveDocumentPath(path, folder: folder);
+      }
+    } catch (e) {
+      debugPrint("Update folder error: $e");
     }
   }
 

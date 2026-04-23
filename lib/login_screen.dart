@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:ui';
+import 'package:google_fonts/google_fonts.dart';
+import 'widgets/scale_button.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -25,8 +27,10 @@ class LoginScreen extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Welcome, ${googleUser.displayName}! 👋"),
-            backgroundColor: Colors.green,
+            content: Text("Welcome, ${googleUser.displayName}! 👋", style: GoogleFonts.poppins()),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
         Navigator.pushReplacementNamed(context, '/home');
@@ -44,12 +48,13 @@ class LoginScreen extends StatelessWidget {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text("Login Issue"),
-            content: Text("$errorMessage\n\nDetails: $e"),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Text("Login Issue", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+            content: Text("$errorMessage\n\nDetails: $e", style: GoogleFonts.poppins(fontSize: 13)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("OK"),
+                child: Text("OK", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -60,84 +65,129 @@ class LoginScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF2563EB), Color(0xFF7C3AED)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
         ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(25),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  padding: const EdgeInsets.all(25),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.picture_as_pdf, size: 80, color: Color(0xFF2563EB)),
-                      const SizedBox(height: 15),
-                      const Text(
-                        "PDF Scanner Pro",
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        "Professional Document Scanning",
-                        style: TextStyle(color: Colors.black54, fontSize: 14),
-                      ),
-                      const SizedBox(height: 30),
-                      ElevatedButton.icon(
-                        onPressed: () => signInWithGoogle(context),
-                        icon: const Icon(Icons.login),
-                        label: const Text("Continue with Google"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black87,
-                          minimumSize: const Size(double.infinity, 55),
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 15),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pushReplacementNamed(context, '/home');
-                        },
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
-                          foregroundColor: Colors.blueAccent,
-                        ),
-                        child: const Text(
-                          "Continue as Guest",
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
+        child: Stack(
+          children: [
+            // Decorative Blobs
+            Positioned(
+              top: -100,
+              right: -100,
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
                 ),
               ),
             ),
-          ),
+            Positioned(
+              bottom: -50,
+              left: -50,
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFEC4899).withValues(alpha: 0.1),
+                ),
+              ),
+            ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 30),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.description_rounded, size: 80, color: Color(0xFF4F46E5)),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      "PDF Scanner Pro",
+                      style: GoogleFonts.poppins(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                        letterSpacing: -1,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Premium document intelligence at your fingertips.",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 48),
+                    ScaleButton(
+                      onTap: () => signInWithGoogle(context),
+                      child: Container(
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.login_rounded, color: Colors.blueAccent),
+                            const SizedBox(width: 12),
+                            Text(
+                              "Continue with Google",
+                              style: GoogleFonts.poppins(
+                                color: isDark ? Colors.black : Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushReplacementNamed(context, '/home');
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF4F46E5),
+                      ),
+                      child: Text(
+                        "Continue as Guest",
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

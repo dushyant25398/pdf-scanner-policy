@@ -27,8 +27,13 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:path_provider/path_provider.dart';
 import 'ocr_result_screen.dart';
 import 'document_picker_screen.dart';
+import 'qr_scanner_screen.dart';
+import 'compression_screen.dart';
 import 'package:image/image.dart' as img;
 import 'package:pdfx/pdfx.dart' as pdfx;
+import 'package:shimmer/shimmer.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'widgets/scale_button.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,27 +72,65 @@ class _MyAppState extends State<MyApp> {
       themeMode: _themeMode,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        brightness: Brightness.light,
-        fontFamily: 'Poppins',
+        textTheme: GoogleFonts.poppinsTextTheme(),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF4F46E5),
+          primary: const Color(0xFF4F46E5),
+          secondary: const Color(0xFF64748B),
+          surface: Colors.white,
+          background: const Color(0xFFF8FAFC),
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          foregroundColor: Color(0xFF1E293B),
           elevation: 0,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
+            color: Color(0xFF1E293B),
+            letterSpacing: -0.5,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          color: Colors.white,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            backgroundColor: const Color(0xFF4F46E5),
+            foregroundColor: Colors.white,
+            textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+          ),
         ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: const Color(0xFF818CF8),
           brightness: Brightness.dark,
+          primary: const Color(0xFF818CF8),
+          surface: const Color(0xFF1E293B),
+          background: const Color(0xFF0F172A),
         ),
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
         fontFamily: 'Poppins',
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF1E293B),
           foregroundColor: Colors.white,
           elevation: 0,
+          centerTitle: true,
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          color: const Color(0xFF1E293B),
         ),
       ),
       home: StreamBuilder<User?>(
@@ -127,7 +170,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _selectedIndex = 0;
   final ImagePicker _picker = ImagePicker();
   List<File> pdfFiles = [];
@@ -150,6 +193,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final CloudService cloudService = CloudService();
 
+  late AnimationController _blinkController;
+  late Animation<double> _blinkAnimation;
+
+  final ScrollController _homeScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -158,6 +206,34 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadInterstitialAd();
     _loadRewardedAd();
     _loadScanCount();
+
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+    _blinkAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(
+      CurvedAnimation(parent: _blinkController, curve: Curves.easeInOut),
+    );
+
+    _homeScrollController.addListener(() {
+      if (_homeScrollController.offset > 50 && _blinkController.isAnimating) {
+        _blinkController.stop();
+        setState(() {}); // Trigger rebuild to hide the arrow
+      } else if (_homeScrollController.offset <= 50 && !_blinkController.isAnimating) {
+        _blinkController.repeat(reverse: true);
+        setState(() {}); // Trigger rebuild to show the arrow
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    _interstitialAd?.dispose();
+    _rewardedAd?.dispose();
+    _blinkController.dispose();
+    _homeScrollController.dispose();
+    super.dispose();
   }
 
   void _loadRewardedAd() {
@@ -766,6 +842,53 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
+
+    // Modern selection: Allow choosing from Recent or Device
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Merge Documents", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 20),
+            _buildActionItem(
+              context,
+              icon: Icons.history_rounded,
+              title: "Select from Recent",
+              color: Colors.blue,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                   _selectedIndex = 2; // Go to Recent tab
+                   isSelectionMode = true;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Select PDFs from the list to merge")));
+              },
+            ),
+            _buildActionItem(
+              context,
+              icon: Icons.phone_android_rounded,
+              title: "Import from Device",
+              color: Colors.orange,
+              onTap: () async {
+                Navigator.pop(context);
+                _importAndMerge(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importAndMerge(BuildContext context) async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
@@ -775,28 +898,31 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!context.mounted) return;
     if (result != null && result.files.isNotEmpty) {
       final selectedFiles = result.paths.map((path) => File(path!)).toList();
-      
-      final dynamic mergedFile = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => MergePreviewScreen(pdfs: selectedFiles),
-        ),
-      );
+      _openMergePreview(context, selectedFiles);
+    }
+  }
 
-      if (mergedFile != null && mergedFile is File) {
-        isSelectionMode = false;
-        selectedIndexes.clear();
-        await StorageService.saveDocumentPath(mergedFile.path);
-        await loadPdfPaths();
+  void _openMergePreview(BuildContext context, List<File> files) async {
+    final dynamic mergedFile = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MergePreviewScreen(pdfs: files),
+      ),
+    );
 
-        if (_isLoggedIn) {
-          cloudService.uploadPdf(mergedFile);
-        }
+    if (mergedFile != null && mergedFile is File) {
+      isSelectionMode = false;
+      selectedIndexes.clear();
+      await StorageService.saveDocumentPath(mergedFile.path);
+      await loadPdfPaths();
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("PDFs Merged Successfully ✅")));
-          _showInterstitialAd();
-        }
+      if (_isLoggedIn) {
+        cloudService.uploadPdf(mergedFile);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("PDFs Merged Successfully ✅")));
+        _showInterstitialAd();
       }
     }
   }
@@ -862,6 +988,53 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _currentLanguage = "English";
+  final List<Map<String, String>> _languages = [
+    {"name": "English", "code": "en", "flag": "🇺🇸"},
+    {"name": "Spanish", "code": "es", "flag": "🇪🇸"},
+    {"name": "French", "code": "fr", "flag": "🇫🇷"},
+    {"name": "German", "code": "de", "flag": "🇩🇪"},
+    {"name": "Hindi", "code": "hi", "flag": "🇮🇳"},
+  ];
+
+  void _showLanguageDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Select Language", style: TextStyle(fontWeight: FontWeight.bold)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _languages.length,
+            itemBuilder: (context, index) {
+              final lang = _languages[index];
+              final isSelected = _currentLanguage == lang['name'];
+              return ListTile(
+                leading: Text(lang['flag']!, style: const TextStyle(fontSize: 24)),
+                title: Text(lang['name']!, style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? const Color(0xFF4F46E5) : null,
+                )),
+                trailing: isSelected ? const Icon(Icons.check_circle, color: Color(0xFF4F46E5)) : null,
+                onTap: () {
+                  setState(() {
+                    _currentLanguage = lang['name']!;
+                  });
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Language changed to ${_currentLanguage}")),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   void sortByName() {
     setState(() {
       pdfFiles.sort((a, b) => a.path.split(Platform.pathSeparator).last.toLowerCase().compareTo(b.path.split(Platform.pathSeparator).last.toLowerCase()));
@@ -875,211 +1048,439 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _homeUI() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isDark
-              ? const [Color(0xFF1E293B), Color(0xFF0F172A)]
-              : const [Color(0xFF2563EB), Color(0xFF60A5FA)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            controller: _homeScrollController,
+            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            padding: const EdgeInsets.only(bottom: 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_isLoggedIn ? "Welcome back," : "Hello,", style: const TextStyle(fontSize: 16, color: Colors.white70)),
-                    Text(
-                      _isLoggedIn ? FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ?? "User" : "Guest User",
-                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                  ],
-                ),
-                if (!_isLoggedIn)
-                  ElevatedButton.icon(
-                    onPressed: _signInWithGoogle,
-                    icon: const Icon(Icons.login, size: 18),
-                    label: const Text("Login"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white24,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+                _buildPremiumHeader(),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Quick Actions",
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildBentoGrid(),
+                    ],
                   ),
+                ),
+                _buildRecentSection(),
               ],
             ),
-            const SizedBox(height: 30),
-            const Text("QUICK ACTIONS", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-            const SizedBox(height: 15),
-            _buildGlassMenuCard(
-              title: "Scan New Document",
-              subtitle: "Capture & convert to PDF",
-              icon: Icons.camera_alt,
-              color: Colors.blue.withValues(alpha: 0.3),
-              onTap: () => _scanDocument(context),
-            ),
-            const SizedBox(height: 15),
-            _buildGlassMenuCard(
-              title: "Create PDF from Images",
-              subtitle: "Pick multiple from gallery",
-              icon: Icons.photo_library,
-              color: Colors.green.withValues(alpha: 0.3),
-              onTap: () => _pickMultipleImages(context),
-            ),
-            const SizedBox(height: 15),
-            _buildGlassMenuCard(
-              title: "Import & Merge PDFs",
-              subtitle: "Combine external files",
-              icon: Icons.file_open,
-              color: Colors.orange.withValues(alpha: 0.3),
-              isLocked: !_isLoggedIn,
-              onTap: () {
-                if (!_isLoggedIn) {
-                  _showPremiumDialog(
-                    title: "Unlock Merge",
-                    message: "Merging multiple PDFs is a premium feature. Login to unlock! 🚀",
-                  );
-                } else {
-                  _pickAndMergePDFs(context);
-                }
-              },
-            ),
-            const SizedBox(height: 15),
-            _buildGlassMenuCard(
-              title: "Edit & Sign PDF",
-              subtitle: "Annotate & sign documents",
-              icon: Icons.edit_document,
-              color: Colors.purple.withValues(alpha: 0.3),
-              isLocked: !_isLoggedIn,
-              onTap: () {
-                if (!_isLoggedIn) {
-                  _showPremiumDialog(
-                    title: "Edit & Sign",
-                    message: "Unlock professional editing and digital signatures. Login to continue! 🚀",
-                  );
-                } else {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => DocumentPickerScreen(
-                        title: "Select PDF to Edit",
-                        onFileSelected: (file) async {
-                          // Close picker
-                          Navigator.pop(context);
+          ),
+        ),
+      ],
+    );
+  }
 
-                          // Show loading while preparing image
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (context) => const Center(child: CircularProgressIndicator()),
-                          );
-
-                          try {
-                            File fileToEdit = file;
-                            if (file.path.toLowerCase().endsWith('.pdf')) {
-                              final document = await pdfx.PdfDocument.openFile(file.path);
-                              final page = await document.getPage(1);
-                              final pageImage = await page.render(
-                                width: page.width * 2,
-                                height: page.height * 2,
-                                format: pdfx.PdfPageImageFormat.jpeg,
-                                quality: 100,
-                              );
-
-                              final tempDir = await getTemporaryDirectory();
-                              final tempFile = File(
-                                  '${tempDir.path}/edit_temp_${DateTime.now().millisecondsSinceEpoch}.jpg');
-                              await tempFile.writeAsBytes(pageImage!.bytes);
-
-                              fileToEdit = tempFile;
-                              await page.close();
-                              await document.close();
-                            }
-
-                            if (!mounted) return;
-                            Navigator.pop(context); // Close loading
-
-                            final dynamic result = await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) => EditPdfScreen(imageFile: fileToEdit)));
-
-                            if (result != null && result is File && mounted) {
-                              await StorageService.saveDocumentPath(result.path);
-                              await loadPdfPaths();
-                              _showInterstitialAd();
-                            }
-                          } catch (e) {
-                            if (mounted) Navigator.pop(context);
-                            debugPrint("Preparation error: $e");
-                          }
-                        },
-                      ),
+  Widget _buildPremiumHeader() {
+    final user = FirebaseAuth.instance.currentUser;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 40, 24, 40),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(40),
+          bottomRight: Radius.circular(40),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _isLoggedIn ? "Welcome back," : "Hello,",
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  _isLoggedIn ? user?.displayName?.split(' ').first ?? "User" : "Guest User",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -1,
+                  ),
+                ),
+              ),
+              if (!_isLoggedIn)
+                TextButton.icon(
+                  onPressed: _signInWithGoogle,
+                  icon: const Icon(Icons.login, color: Colors.white, size: 18),
+                  label: const Text("Login", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          ScaleButton(
+            onTap: () {}, // Trigger Premium Flow
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withValues(alpha: 0.25),
+                    Colors.white.withValues(alpha: 0.1),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF59E0B),
+                      shape: BoxShape.circle,
                     ),
-                  );
-                }
-              },
+                    child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 16),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    "Get Premium Access",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.arrow_forward_ios_rounded, color: Colors.white.withValues(alpha: 0.5), size: 12),
+                ],
+              ),
             ),
-            const SizedBox(height: 15),
-            _buildGlassMenuCard(
-              title: "Cloud Sync & Backup",
-              subtitle: "Secure your documents",
-              icon: Icons.cloud_done,
-              color: Colors.teal.withValues(alpha: 0.3),
-              isLocked: !_isLoggedIn,
-              onTap: () {
-                if (!_isLoggedIn) {
-                  _showPremiumDialog(
-                    title: "Cloud Sync",
-                    message: "Backup your documents to the cloud and access them anywhere. Login to unlock! 🚀",
-                  );
-                } else {
-                  cloudService.syncToCloud(pdfFiles);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Syncing documents to cloud... ☁️")));
-                  }
-                }
-              },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBentoGrid() {
+    return Column(
+      children: [
+        _buildBentoCard(
+          title: "Scan Document",
+          subtitle: "Camera detection",
+          icon: Icons.camera_alt_rounded,
+          color: const Color(0xFF6366F1),
+          isLarge: true,
+          onTap: () => _scanDocument(context),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildBentoCard(
+                title: "Images to PDF",
+                subtitle: "Convert batch",
+                icon: Icons.photo_library_rounded,
+                color: const Color(0xFF10B981),
+                onTap: () => _pickMultipleImages(context),
+              ),
             ),
-            const SizedBox(height: 15),
-            _buildGlassMenuCard(
-              title: "Extract Text (OCR)",
-              subtitle: "Convert scans to text",
-              icon: Icons.text_snippet,
-              color: Colors.indigo.withValues(alpha: 0.3),
-              isLocked: !_isLoggedIn,
-              onTap: () {
-                if (!_isLoggedIn) {
-                  _showPremiumDialog(
-                    title: "Unlock OCR",
-                    message: "Text extraction (OCR) is a premium feature. Login to unlock! 🚀",
-                  );
-                } else {
-                  if (pdfFiles.isNotEmpty) {
-                    _extractTextFromSelected(context);
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("No documents to extract text from 📂. Scan one first!")),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildBentoCard(
+                title: "Merge PDFs",
+                subtitle: "Combine files",
+                icon: Icons.merge_type_rounded,
+                color: const Color(0xFFF59E0B),
+                isLocked: !_isLoggedIn,
+                onTap: () {
+                  if (!_isLoggedIn) {
+                    _showPremiumDialog(
+                      title: "Unlock Merge",
+                      message: "Merging multiple PDFs is a premium feature. Login to unlock! 🚀",
                     );
+                  } else {
+                    _pickAndMergePDFs(context);
                   }
-                }
-              },
-              isNew: true,
+                },
+              ),
             ),
-            const SizedBox(height: 40),
           ],
         ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildBentoCard(
+                title: "Edit & Sign",
+                subtitle: "Add text/sig",
+                icon: Icons.draw_rounded,
+                color: const Color(0xFF8B5CF6),
+                isLocked: !_isLoggedIn,
+                onTap: () {
+                  if (!_isLoggedIn) {
+                    _showPremiumDialog(
+                      title: "Edit & Sign",
+                      message: "Unlock professional editing and digital signatures. Login to continue! 🚀",
+                    );
+                  } else {
+                    // Navigate to picker logic (existing)
+                    _navigateToPickerForEditing();
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildBentoCard(
+                title: "Text (OCR)",
+                subtitle: "Scan to text",
+                icon: Icons.text_snippet_rounded,
+                color: const Color(0xFFEC4899),
+                isLocked: !_isLoggedIn,
+                onTap: () {
+                  if (!_isLoggedIn) {
+                    _showPremiumDialog(
+                      title: "OCR Feature",
+                      message: "Extract text from images using AI. Login to unlock! 🚀",
+                    );
+                  } else {
+                    _extractTextFromSelected(context);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildBentoCard(
+                title: "Compression",
+                subtitle: "Reduce size",
+                icon: Icons.compress_rounded,
+                color: const Color(0xFFF97316),
+                isNew: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const CompressionScreen()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildBentoCard(
+                title: "QR Scanner",
+                subtitle: "Fast scan",
+                icon: Icons.qr_code_scanner_rounded,
+                color: const Color(0xFF06B6D4),
+                isNew: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _navigateToPickerForEditing() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DocumentPickerScreen(
+          title: "Select PDF to Edit",
+          onFileSelected: (file) async {
+            Navigator.pop(context);
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => const Center(child: CircularProgressIndicator()),
+            );
+
+            try {
+              File fileToEdit = file;
+              if (file.path.toLowerCase().endsWith('.pdf')) {
+                final document = await pdfx.PdfDocument.openFile(file.path);
+                final page = await document.getPage(1);
+                final pageImage = await page.render(
+                  width: page.width * 2,
+                  height: page.height * 2,
+                  format: pdfx.PdfPageImageFormat.jpeg,
+                  quality: 100,
+                );
+
+                final tempDir = await getTemporaryDirectory();
+                final tempFile = File(
+                    '${tempDir.path}/edit_temp_${DateTime.now().millisecondsSinceEpoch}.jpg');
+                await tempFile.writeAsBytes(pageImage!.bytes);
+
+                fileToEdit = tempFile;
+                await page.close();
+                await document.close();
+              }
+
+              if (!mounted) return;
+              Navigator.pop(context);
+
+              final dynamic result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => EditPdfScreen(imageFile: fileToEdit)));
+
+              if (result != null && result is File && mounted) {
+                await StorageService.saveDocumentPath(result.path);
+                await loadPdfPaths();
+                _showInterstitialAd();
+              }
+            } catch (e) {
+              if (mounted) Navigator.pop(context);
+              debugPrint("Preparation error: $e");
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBentoCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    bool isLarge = false,
+    bool isLocked = false,
+    bool isNew = false,
+  }) {
+    return ScaleButton(
+      onTap: onTap,
+      child: Container(
+        height: 130, // Consistently 130
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.1),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min, // Added
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                const SizedBox(height: 12), // Replaced Spacer to control height
+                Text(
+                  title,
+                  style: GoogleFonts.poppins( // Added GoogleFonts
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: -0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey.shade500,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            if (isNew)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    "NEW",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            if (isLocked)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Icon(Icons.lock_outline_rounded,
+                    size: 18, color: Colors.grey.shade400),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+  Widget _buildRecentSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Recent Documents",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _selectedIndex = 2),
+                child: const Text("See All"),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _recentUI(isHome: true),
+        ],
       ),
     );
   }
@@ -1165,218 +1566,86 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _recentUI() {
+  Widget _recentUI({bool isHome = false}) {
     if (_isLoadingPdfs) {
-      return const Center(child: CircularProgressIndicator());
+      return ListView.builder(
+        shrinkWrap: isHome,
+        padding: isHome ? EdgeInsets.zero : const EdgeInsets.all(10),
+        itemCount: 3,
+        itemBuilder: (context, index) => Shimmer.fromColors(
+          baseColor: Colors.grey.withValues(alpha: 0.2),
+          highlightColor: Colors.grey.withValues(alpha: 0.1),
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+      );
     }
 
     if (pdfFiles.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.05),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.folder_open_rounded,
+                  size: 80,
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+                ),
               ),
-              child: const Icon(Icons.folder_open_rounded, size: 100, color: Colors.grey),
-            ),
-            const SizedBox(height: 20),
-            const Text("No documents yet", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(height: 10),
-            const Text("No documents yet.\nScan to create your first PDF",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 16)),
-          ],
+              const SizedBox(height: 24),
+              Text(
+                "No Documents Yet",
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Your scanned PDFs will appear here.\nStart by tapping 'Scan Document' above.",
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  color: Theme.of(context).colorScheme.secondary,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(10),
-      itemCount: pdfFiles.length,
+      padding: isHome ? EdgeInsets.zero : const EdgeInsets.all(10),
+      shrinkWrap: isHome,
+      physics: isHome ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
+      itemCount: isHome ? (pdfFiles.length > 5 ? 5 : pdfFiles.length) : pdfFiles.length,
       itemBuilder: (context, index) {
         final file = pdfFiles[index];
         final isSelected = selectedIndexes.contains(index);
         final stats = file.statSync();
         final size = (stats.size / 1024).toStringAsFixed(1);
+        final fileName = file.path.split(Platform.pathSeparator).last;
 
-        return Card(
-          elevation: isSelected ? 8 : 2,
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          color: isSelected ? Colors.blue.withValues(alpha: 0.1) : null,
-          child: ListTile(
-            leading: isSelectionMode
-                ? Checkbox(
-                    value: isSelected,
-                    onChanged: (val) {
-                      setState(() {
-                        if (val!) {
-                          selectedIndexes.add(index);
-                        } else {
-                          selectedIndexes.remove(index);
-                          if (selectedIndexes.isEmpty) isSelectionMode = false;
-                        }
-                      });
-                    },
-                  )
-                : const Icon(Icons.picture_as_pdf, color: Colors.red),
-            title: Row(
-              children: [
-                Expanded(child: Text(file.path.split(Platform.pathSeparator).last, style: const TextStyle(fontWeight: FontWeight.bold))),
-                if (_isLoggedIn)
-                  StreamBuilder<DocumentSnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(FirebaseAuth.instance.currentUser!.uid)
-                        .collection('pdfs')
-                        .doc(file.path.split(Platform.pathSeparator).last)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData && snapshot.data!.exists) {
-                        return const Icon(Icons.cloud_done, color: Colors.blue, size: 16);
-                      }
-                      return const Icon(Icons.cloud_queue, color: Colors.grey, size: 16);
-                    },
-                  ),
-              ],
-            ),
-            subtitle: Text("$size KB • ${stats.modified.day}/${stats.modified.month}"),
-            trailing: isSelectionMode
-                ? null
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.visibility, color: Colors.blue),
-                        tooltip: "View",
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => Scaffold(
-                                appBar: AppBar(
-                                  title: Text(file.path.split(Platform.pathSeparator).last),
-                                  actions: [
-                                    IconButton(
-                                      icon: const Icon(Icons.share),
-                                      onPressed: () => Share.shareXFiles([XFile(file.path)]),
-                                    ),
-                                  ],
-                                ),
-                                body: SfPdfViewer.file(file),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.orange),
-                        tooltip: "Edit",
-                        onPressed: () async {
-                          if (!_isLoggedIn) {
-                            _showPremiumDialog(
-                              title: "Premium Feature",
-                              message: "Editing and Signing is reserved for premium users. Login to unlock! 🚀",
-                            );
-                            return;
-                          }
-                          
-                          // Show loading while preparing image
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (context) => const Center(child: CircularProgressIndicator()),
-                          );
-
-                          try {
-                            File fileToEdit = file;
-                            if (file.path.toLowerCase().endsWith('.pdf')) {
-                              final document = await pdfx.PdfDocument.openFile(file.path);
-                              final page = await document.getPage(1);
-                              final pageImage = await page.render(
-                                width: page.width * 2,
-                                height: page.height * 2,
-                                format: pdfx.PdfPageImageFormat.jpeg,
-                                quality: 100,
-                              );
-                              
-                              final tempDir = await getTemporaryDirectory();
-                              final tempFile = File('${tempDir.path}/edit_temp_${DateTime.now().millisecondsSinceEpoch}.jpg');
-                              await tempFile.writeAsBytes(pageImage!.bytes);
-                              
-                              fileToEdit = tempFile;
-                              await page.close();
-                              await document.close();
-                            }
-
-                            if (!mounted) return;
-                            Navigator.pop(context); // Close loading
-
-                            final dynamic result = await Navigator.push(
-                              context, 
-                              MaterialPageRoute(builder: (_) => EditPdfScreen(imageFile: fileToEdit))
-                            );
-                            
-                            if (result != null && result is File && mounted) {
-                              await StorageService.saveDocumentPath(result.path);
-                              await loadPdfPaths();
-                              _showInterstitialAd();
-                            }
-                          } catch (e) {
-                            if (mounted) Navigator.pop(context);
-                            debugPrint("Preparation error: $e");
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.share, color: Colors.green),
-                        tooltip: "Share",
-                        onPressed: () => Share.shareXFiles([XFile(file.path)]),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        tooltip: "Delete",
-                        onPressed: () async {
-                          bool? confirm = await showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text("Delete PDF?"),
-                              content: const Text("This action cannot be undone."),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-                                TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            if (_isLoggedIn) {
-                              await cloudService.deleteFromCloud(file.path.split(Platform.pathSeparator).last);
-                            }
-                            
-                            await StorageService.removeDocumentPath(file.path);
-
-                            if (await file.exists()) {
-                              await file.delete();
-                            }
-
-                            setState(() => pdfFiles.removeAt(index));
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Deleted successfully 🗑️")));
-                            }
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-            onLongPress: () {
-              setState(() {
-                isSelectionMode = true;
-                selectedIndexes.add(index);
-              });
-            },
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: ScaleButton(
             onTap: () async {
               if (isSelectionMode) {
                 setState(() {
@@ -1387,12 +1656,602 @@ class _HomeScreenState extends State<HomeScreen> {
                     selectedIndexes.add(index);
                   }
                 });
+              } else {
+                _viewPDF(file);
               }
             },
+            child: Container(
+              decoration: BoxDecoration(
+                color: isSelected 
+                    ? const Color(0xFF4F46E5).withValues(alpha: 0.08)
+                    : Theme.of(context).cardTheme.color,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isSelected 
+                      ? const Color(0xFF4F46E5).withValues(alpha: 0.3)
+                      : Colors.transparent,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                leading: isSelectionMode
+                    ? Checkbox(
+                        value: isSelected,
+                        activeColor: const Color(0xFF4F46E5),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        onChanged: (val) {
+                          setState(() {
+                            if (val!) {
+                              selectedIndexes.add(index);
+                            } else {
+                              selectedIndexes.remove(index);
+                              if (selectedIndexes.isEmpty) isSelectionMode = false;
+                            }
+                          });
+                        },
+                      )
+                    : Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFEF4444), size: 24),
+                      ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        fileName,
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          letterSpacing: -0.3,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_isLoggedIn)
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(FirebaseAuth.instance.currentUser!.uid)
+                            .collection('pdfs')
+                            .doc(fileName)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          final isSynced = snapshot.hasData && snapshot.data!.exists;
+                          return AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: Icon(
+                              isSynced ? Icons.cloud_done_rounded : Icons.cloud_upload_outlined,
+                              key: ValueKey(isSynced),
+                              color: isSynced ? const Color(0xFF10B981) : Colors.grey.withValues(alpha: 0.5),
+                              size: 16,
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    "$size KB • ${stats.modified.day}/${stats.modified.month}/${stats.modified.year}",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+                trailing: isSelectionMode
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.more_vert_rounded, color: Colors.grey),
+                        onPressed: () => _showDocumentActions(context, file, index),
+                      ),
+                onLongPress: () {
+                  setState(() {
+                    isSelectionMode = true;
+                    selectedIndexes.add(index);
+                  });
+                },
+              ),
+            ),
           ),
         );
       },
     );
+  }
+
+  void _viewPDF(File file) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: Text(file.path.split(Platform.pathSeparator).last),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.share),
+                onPressed: () => Share.shareXFiles([XFile(file.path)]),
+              ),
+            ],
+          ),
+          body: SfPdfViewer.file(file),
+        ),
+      ),
+    );
+  }
+
+  void _showDocumentActions(BuildContext context, File file, int index) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: const EdgeInsets.only(bottom: 24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color?.withValues(alpha: 0.85),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.1),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFEF4444), size: 28),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              file.path.split(Platform.pathSeparator).last,
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                                letterSpacing: -0.5,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              "PDF Document • ${(file.lengthSync() / 1024).toStringAsFixed(1)} KB",
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                _buildActionItem(
+                  context,
+                  icon: Icons.visibility_rounded,
+                  title: "View Document",
+                  color: Colors.blue,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _viewPDF(file);
+                  },
+                ),
+                _buildActionItem(
+                  context,
+                  icon: Icons.edit_rounded,
+                  title: "Edit & Sign",
+                  color: Colors.orange,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _editAndSignDocument(file);
+                  },
+                ),
+                _buildActionItem(
+                  context,
+                  icon: Icons.drive_file_move_rounded,
+                  title: "Move to Folder",
+                  color: Colors.blueGrey,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showMoveToFolderInHome(file);
+                  },
+                ),
+                _buildActionItem(
+                  context,
+                  icon: Icons.share_rounded,
+                  title: "Share PDF",
+                  color: Colors.green,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Share.shareXFiles([XFile(file.path)]);
+                  },
+                ),
+                _buildActionItem(
+                  context,
+                  icon: Icons.download_rounded,
+                  title: "Save to Device",
+                  color: Colors.teal,
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _saveToDevice(file);
+                  },
+                ),
+                _buildActionItem(
+                  context,
+                  icon: Icons.drive_file_rename_outline_rounded,
+                  title: "Rename",
+                  color: Colors.purple,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _renameDocument(file);
+                  },
+                ),
+                _buildActionItem(
+                  context,
+                  icon: Icons.delete_outline_rounded,
+                  title: "Delete",
+                  color: Colors.red,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _deleteDocument(file, index);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionItem(BuildContext context, {
+    required IconData icon,
+    required String title,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: color, size: 22),
+      ),
+      title: Text(
+        title,
+        style: GoogleFonts.poppins(
+          fontWeight: FontWeight.w500,
+          fontSize: 16,
+          color: title == "Delete" ? Colors.red : null,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey, size: 20),
+    );
+  }
+
+  Future<void> _saveToDevice(File file) async {
+    try {
+      final fileName = file.path.split(Platform.pathSeparator).last;
+      
+      // For Android 11+, we typically use the Downloads folder or external storage
+      Directory? downloadsDir;
+      if (Platform.isAndroid) {
+        downloadsDir = Directory('/storage/emulated/0/Download');
+        if (!await downloadsDir.exists()) {
+           downloadsDir = await getExternalStorageDirectory();
+        }
+      } else {
+        downloadsDir = await getDownloadsDirectory();
+      }
+
+      if (downloadsDir == null) {
+        throw Exception("Could not find downloads directory");
+      }
+
+      final String newPath = "${downloadsDir.path}/$fileName";
+      final File newFile = File(newPath);
+      
+      await file.copy(newPath);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Saved to Downloads: $fileName"),
+            action: SnackBarAction(label: "Open", onPressed: () {
+               // Optional: open the file
+            }),
+          ),
+        );
+      }
+    } catch (e) {
+      if (Platform.isIOS) {
+        await Share.shareXFiles([XFile(file.path)], subject: "Export PDF");
+      } else {
+        debugPrint("Save to device error: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to save: $e")),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _editAndSignDocument(File file) async {
+    if (!_isLoggedIn) {
+      _showPremiumDialog(
+        title: "Premium Feature",
+        message: "Editing and Signing is reserved for premium users. Login to unlock! 🚀",
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      File fileToEdit = file;
+      if (file.path.toLowerCase().endsWith('.pdf')) {
+        final document = await pdfx.PdfDocument.openFile(file.path);
+        final page = await document.getPage(1);
+        final pageImage = await page.render(
+          width: page.width * 2,
+          height: page.height * 2,
+          format: pdfx.PdfPageImageFormat.jpeg,
+          quality: 100,
+        );
+
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/edit_temp_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        await tempFile.writeAsBytes(pageImage!.bytes);
+
+        fileToEdit = tempFile;
+        await page.close();
+        await document.close();
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading
+
+      final dynamic result = await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => EditPdfScreen(imageFile: fileToEdit))
+      );
+
+      if (result != null && result is File && mounted) {
+        await StorageService.saveDocumentPath(result.path);
+        await loadPdfPaths();
+        _showInterstitialAd();
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint("Preparation error: $e");
+    }
+  }
+
+  Future<void> _renameDocument(File file) async {
+    String currentName = file.path.split(Platform.pathSeparator).last.replaceAll(".pdf", "");
+    TextEditingController controller = TextEditingController(text: currentName);
+
+    bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Rename Document"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: "New Name",
+            suffixText: ".pdf",
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Rename")),
+        ],
+      ),
+    );
+
+    if (confirmed == true && controller.text.trim().isNotEmpty) {
+      try {
+        String newName = controller.text.trim();
+        if (!newName.endsWith(".pdf")) newName += ".pdf";
+        
+        String newPath = file.parent.path + Platform.pathSeparator + newName;
+        
+        if (await File(newPath).exists()) {
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("A file with this name already exists")));
+           return;
+        }
+
+        await file.rename(newPath);
+        
+        // Update storage and UI
+        await StorageService.removeDocumentPath(file.path);
+        await StorageService.saveDocumentPath(newPath);
+        await loadPdfPaths();
+        
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Renamed successfully")));
+      } catch (e) {
+        debugPrint("Rename error: $e");
+      }
+    }
+  }
+
+  Future<void> _deleteDocument(File file, int index) async {
+    bool? confirm = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete PDF?"),
+        content: const Text("This action cannot be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      if (FirebaseAuth.instance.currentUser != null) {
+        await cloudService.deleteFromCloud(file.path.split(Platform.pathSeparator).last);
+      }
+
+      await StorageService.removeDocumentPath(file.path);
+
+      if (await file.exists()) {
+        await file.delete();
+      }
+
+      setState(() => pdfFiles.removeAt(index));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Deleted successfully 🗑️")));
+      }
+    }
+  }
+
+  Widget _buildBentoCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    bool isLarge = false,
+    bool isLocked = false,
+    bool isNew = false,
+  }) {
+    return ScaleButton(
+      onTap: onTap,
+      child: Container(
+        height: 130, // Consistently 130
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.1),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min, // Added
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                const SizedBox(height: 12), // Replaced Spacer to control height
+                Text(
+                  title,
+                  style: GoogleFonts.poppins( // Added GoogleFonts
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: -0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey.shade500,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            if (isNew)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    "NEW",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            if (isLocked)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Icon(Icons.lock_outline_rounded,
+                    size: 18, color: Colors.grey.shade400),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   }
 
   @override
@@ -1409,7 +2268,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (isSelectionMode)
             IconButton(icon: const Icon(Icons.merge_type), onPressed: () => mergeSelectedPDFs(context))
           else ...[
-            IconButton(icon: const Icon(Icons.sort_by_alpha), onPressed: sortByName),
+            IconButton(icon: const Icon(Icons.translate_rounded), onPressed: _showLanguageDialog),
             IconButton(
                 icon: Icon(widget.themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode),
                 onPressed: () => widget.onThemeChanged(widget.themeMode != ThemeMode.dark)),
@@ -1425,15 +2284,49 @@ class _HomeScreenState extends State<HomeScreen> {
           ]
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(child: _selectedIndex == 0 ? _homeUI() : (_selectedIndex == 1 ? const DocumentsScreen() : _recentUI())),
-          if (_isAdLoaded && _bannerAd != null)
-            Container(
-              alignment: Alignment.center,
-              width: _bannerAd!.size.width.toDouble(),
-              height: _bannerAd!.size.height.toDouble(),
-              child: AdWidget(ad: _bannerAd!),
+          Column(
+            children: [
+              Expanded(child: _selectedIndex == 0 ? _homeUI() : (_selectedIndex == 1 ? const DocumentsScreen() : _recentUI())),
+              if (_isAdLoaded && _bannerAd != null)
+                Container(
+                  alignment: Alignment.center,
+                  width: _bannerAd!.size.width.toDouble(),
+                  height: _bannerAd!.size.height.toDouble(),
+                  child: AdWidget(ad: _bannerAd!),
+                ),
+            ],
+          ),
+          if (_selectedIndex == 0 && _blinkController.isAnimating)
+            Positioned(
+              bottom: 20,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: FadeTransition(
+                  opacity: _blinkAnimation,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4F46E5).withValues(alpha: 0.8),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
             ),
         ],
       ),
@@ -1485,6 +2378,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
   late TabController _tabController;
   List<File> pdfList = [];
   List<File> filteredList = [];
+  Map<String, List<File>> groupedFiles = {};
+  List<String> folders = ["Uncategorized", "Work", "Personal", "Legal", "Medical", "Receipts"];
+  String selectedFolder = "All";
   bool isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   final CloudService _cloudService = CloudService();
@@ -1504,14 +2400,27 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
     super.dispose();
   }
 
-  void _filterDocuments() {
+  void _filterDocuments() async {
     final query = _searchController.text.toLowerCase();
-    setState(() {
-      filteredList = pdfList.where((file) {
-        final fileName = file.path.split(Platform.pathSeparator).last.toLowerCase();
-        return fileName.contains(query);
-      }).toList();
-    });
+    List<File> results = [];
+
+    for (var file in pdfList) {
+      final fileName = file.path.split(Platform.pathSeparator).last.toLowerCase();
+      final folder = await StorageService.getDocumentFolder(file.path);
+      
+      bool matchesSearch = fileName.contains(query);
+      bool matchesFolder = selectedFolder == "All" || folder == selectedFolder;
+
+      if (matchesSearch && matchesFolder) {
+        results.add(file);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        filteredList = results;
+      });
+    }
   }
 
   Future<void> _loadPdfs() async {
@@ -1519,12 +2428,67 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
     if (mounted) {
       setState(() {
         pdfList = files;
-        filteredList = files;
-        _filterDocuments();
         isLoading = false;
       });
+      _filterDocuments();
     }
   }
+
+  void _createNewFolder() {
+    TextEditingController folderController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Create Folder"),
+        content: TextField(
+          controller: folderController,
+          decoration: const InputDecoration(hintText: "Folder Name"),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () {
+              if (folderController.text.isNotEmpty) {
+                setState(() {
+                  folders.add(folderController.text);
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text("Create"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMoveToFolderDialog(File file) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Move to Folder", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            ...folders.map((folder) => ListTile(
+              leading: const Icon(Icons.folder_outlined, color: Color(0xFF4F46E5)),
+              title: Text(folder),
+              onTap: () async {
+                await StorageService.updateDocumentFolder(file.path, folder);
+                Navigator.pop(context);
+                _loadPdfs();
+              },
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   void _confirmDelete(File file) {
     showDialog(
@@ -1582,18 +2546,49 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: "Search documents...",
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchController.text.isNotEmpty 
-                ? IconButton(icon: const Icon(Icons.clear), onPressed: () => _searchController.clear()) 
-                : null,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-              filled: true,
-              fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white10 : Colors.grey.shade100,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Container(
+            decoration: BoxDecoration(
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 15,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _searchController,
+              style: GoogleFonts.poppins(fontSize: 15),
+              decoration: InputDecoration(
+                hintText: "Search your documents...",
+                hintStyle: GoogleFonts.poppins(color: Colors.grey, fontSize: 14),
+                prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF4F46E5), size: 22),
+                suffixIcon: _searchController.text.isNotEmpty 
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18), 
+                      onPressed: () {
+                        _searchController.clear();
+                        FocusScope.of(context).unfocus();
+                      }
+                    ) 
+                  : null,
+                filled: true,
+                fillColor: Theme.of(context).cardTheme.color,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.5),
+                ),
+              ),
             ),
           ),
         ),
@@ -1606,88 +2601,243 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
             ],
           ),
         ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildBentoCard(
+                title: "Compression",
+                subtitle: "Reduce size",
+                icon: Icons.compress_rounded,
+                color: const Color(0xFFF97316),
+                isNew: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const CompressionScreen()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildBentoCard(
+                title: "QR Scanner",
+                subtitle: "Fast scan",
+                icon: Icons.qr_code_scanner_rounded,
+                color: const Color(0xFF06B6D4),
+                isNew: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
 
   Widget _buildLocalList() {
-    if (filteredList.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 80, color: Colors.grey.withValues(alpha: 0.5)),
-            const SizedBox(height: 16),
-            Text(
-              _searchController.text.isEmpty 
-                ? "No local documents yet." 
-                : "No results found for \"${_searchController.text}\"",
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey, fontSize: 18),
-            ),
-          ],
+    return Column(
+      children: [
+        SizedBox(
+          height: 50,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              _buildFolderChip("All"),
+              ...folders.map((f) => _buildFolderChip(f)),
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: IconButton(
+                  onPressed: _createNewFolder,
+                  icon: const Icon(Icons.add_circle_outline, color: Color(0xFF4F46E5)),
+                ),
+              ),
+            ],
+          ),
         ),
-      );
-    }
+        const SizedBox(height: 8),
+        Expanded(
+          child: filteredList.isEmpty ? _buildEmptyState() : _buildFileList(),
+        ),
+      ],
+    );
+  }
 
+  Widget _buildFolderChip(String label) {
+    bool isSelected = selectedFolder == label;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        selected: isSelected,
+        label: Text(label),
+        onSelected: (val) {
+          setState(() {
+            selectedFolder = label;
+          });
+          _filterDocuments();
+        },
+        selectedColor: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+        checkmarkColor: const Color(0xFF4F46E5),
+        labelStyle: TextStyle(
+          color: isSelected ? const Color(0xFF4F46E5) : Colors.grey,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+        backgroundColor: Colors.transparent,
+        shape: StadiumBorder(side: BorderSide(color: isSelected ? const Color(0xFF4F46E5) : Colors.grey.shade300)),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: const Color(0xFF4F46E5).withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.search_off_rounded,
+              size: 80,
+              color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            _searchController.text.isEmpty
+                ? "No documents in $selectedFolder"
+                : "No results for \"${_searchController.text}\"",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFileList() {
     return RefreshIndicator(
       onRefresh: _loadPdfs,
+      color: const Color(0xFF4F46E5),
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 100),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
         itemCount: filteredList.length,
         itemBuilder: (context, index) {
           final file = filteredList[index];
           final stats = file.statSync();
           final size = (stats.size / 1024).toStringAsFixed(1);
+          final fileName = file.path.split(Platform.pathSeparator).last;
 
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ListTile(
-              leading: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 36),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      file.path.split(Platform.pathSeparator).last,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+          return FutureBuilder<String>(
+            future: StorageService.getDocumentFolder(file.path),
+            builder: (context, snapshot) {
+              final folder = snapshot.data ?? "Uncategorized";
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: ScaleButton(
+                  onLongPress: () => _showMoveToFolderDialog(file),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => Scaffold(
+                          appBar: AppBar(title: Text(fileName)),
+                          body: SfPdfViewer.file(file),
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardTheme.color,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      leading: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFEF4444), size: 24),
+                      ),
+                      title: Text(
+                        fileName,
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              folder,
+                              style: const TextStyle(fontSize: 10, color: Color(0xFF4F46E5), fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            "$size KB • ${stats.modified.day}/${stats.modified.month}",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.share_rounded, color: Color(0xFF4F46E5), size: 20),
+                            onPressed: () => Share.shareXFiles([XFile(file.path)]),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.drive_file_move_outlined, color: Color(0xFF64748B), size: 20),
+                            onPressed: () => _showMoveToFolderDialog(file),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-              subtitle: Text("$size KB • ${stats.modified.day}/${stats.modified.month}/${stats.modified.year}"),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Scaffold(
-                      appBar: AppBar(title: Text(file.path.split(Platform.pathSeparator).last)),
-                      body: SfPdfViewer.file(file),
-                    ),
-                  ),
-                );
-              },
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.share, color: Colors.blue),
-                    onPressed: () => Share.shareXFiles([XFile(file.path)]),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _confirmDelete(file),
-                  ),
-                ],
-              ),
-            ),
+                ),
+              );
+            }
           );
         },
       ),
     );
   }
+
 
   Widget _buildCloudList() {
     if (FirebaseAuth.instance.currentUser == null) {
@@ -1868,45 +3018,5 @@ class ProfileScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class ScaleButton extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-  const ScaleButton({super.key, required this.child, required this.onTap});
-
-  @override
-  State<ScaleButton> createState() => _ScaleButtonState();
-}
-
-class _ScaleButtonState extends State<ScaleButton> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 100));
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(_controller);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _controller.forward(),
-      onTapUp: (_) {
-        _controller.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _controller.reverse(),
-      child: ScaleTransition(scale: _scaleAnimation, child: widget.child),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
   }
 }

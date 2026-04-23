@@ -45,6 +45,28 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
   void initState() {
     super.initState();
     _prepareImage();
+    _showEditHint();
+  }
+
+  void _showEditHint() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.lightbulb_outline, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(child: Text("Drag to move, pinch to resize, or long-press for options.")),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(20),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    });
   }
 
   Future<void> _prepareImage() async {
@@ -250,41 +272,71 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
       if (!mounted) return;
       Navigator.pop(context); // Close loading
 
-      String? fileName = await showDialog<String>(
+      final bool? overwrite = await showDialog<bool>(
         context: context,
-        builder: (context) {
-          TextEditingController controller = TextEditingController(
-              text: "edited_${DateTime.now().millisecondsSinceEpoch}");
-          return AlertDialog(
-            title: const Text("Save PDF"),
-            content: TextField(
-              controller: controller,
-              decoration: const InputDecoration(labelText: "File name"),
+        builder: (context) => AlertDialog(
+          title: const Text("Save Document"),
+          content: const Text("Would you like to overwrite the original or save as a new duplicate?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Save as Duplicate"),
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-              ElevatedButton(
-                  onPressed: () => Navigator.pop(context, controller.text),
-                  child: const Text("Save")),
-            ],
-          );
-        },
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Overwrite Original"),
+            ),
+          ],
+        ),
       );
 
-      if (fileName != null && fileName.trim().isNotEmpty) {
-        final folder = await StorageService.getPdfDirectory();
-        final file = File("${folder.path}/$fileName.pdf");
-        await file.writeAsBytes(await pdf.save());
-        if (mounted) {
-          Navigator.pop(context, file);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Edited PDF Saved ✅")),
-          );
-        }
+      if (overwrite == null) return;
+
+      String? fileName;
+      if (!overwrite) {
+        fileName = await showDialog<String>(
+          context: context,
+          builder: (context) {
+            TextEditingController controller = TextEditingController(
+                text: "edited_${DateTime.now().millisecondsSinceEpoch}");
+            return AlertDialog(
+              title: const Text("Duplicate Name"),
+              content: TextField(controller: controller, autofocus: true),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+                TextButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text("Save")),
+              ],
+            );
+          },
+        );
+        if (fileName == null) return;
+      }
+
+      final directory = await StorageService.getPdfDirectory();
+      final path = overwrite 
+          ? widget.imageFile.path 
+          : "${directory.path}/$fileName.pdf";
+      
+      final file = File(path);
+      await file.writeAsBytes(await pdf.save());
+      
+      if (!overwrite) {
+        await StorageService.saveDocumentPath(path);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(overwrite ? "Original updated! ✅" : "Saved as duplicate! ✅")),
+        );
+        Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context);
-      debugPrint("Error saving edited PDF: $e");
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Save failed: $e")),
+        );
+      }
     }
   }
 
