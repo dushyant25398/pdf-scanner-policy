@@ -2,8 +2,10 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'services/storage_service.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ImagePreviewScreen extends StatefulWidget {
   final List<XFile> images;
@@ -38,6 +40,45 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     if (images.isNotEmpty) {
       setState(() {
         selectedImages.addAll(images);
+      });
+    }
+  }
+
+  Future<void> _cropImage(int index) async {
+    final image = selectedImages[index];
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: image.path,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Image',
+          toolbarColor: Colors.blue,
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+          aspectRatioPresets: [
+            CropAspectRatioPreset.original,
+            CropAspectRatioPreset.square,
+            CropAspectRatioPreset.ratio3x2,
+            CropAspectRatioPreset.ratio4x3,
+            CropAspectRatioPreset.ratio16x9
+          ],
+        ),
+        IOSUiSettings(
+          title: 'Crop Image',
+          aspectRatioPresets: [
+            CropAspectRatioPreset.original,
+            CropAspectRatioPreset.square,
+            CropAspectRatioPreset.ratio3x2,
+            CropAspectRatioPreset.ratio4x3,
+            CropAspectRatioPreset.ratio16x9
+          ],
+        ),
+      ],
+    );
+
+    if (croppedFile != null) {
+      setState(() {
+        selectedImages[index] = XFile(croppedFile.path);
       });
     }
   }
@@ -168,46 +209,54 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
                         itemBuilder: (context, index) {
                           final image = selectedImages[index];
 
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(15),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Image.file(File(image.path), fit: BoxFit.cover),
-                                Positioned(
-                                  top: 8,
-                                  right: 8,
-                                  child: GestureDetector(
-                                    onTap: () => _removeImage(index),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: BackdropFilter(
-                                        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          color: Colors.black.withValues(alpha: 0.5),
-                                          child: const Icon(Icons.close, size: 18, color: Colors.white),
+                          return GestureDetector(
+                            onTap: () => _cropImage(index),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(15),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.file(File(image.path), fit: BoxFit.cover),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: GestureDetector(
+                                      onTap: () => _removeImage(index),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: BackdropFilter(
+                                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            color: Colors.black.withValues(alpha: 0.5),
+                                            child: const Icon(Icons.close, size: 18, color: Colors.white),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                Positioned(
-                                  bottom: 8,
-                                  left: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      "${index + 1}",
-                                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                                  Positioned(
+                                    bottom: 8,
+                                    left: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        "${index + 1}",
+                                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                  Positioned(
+                                    bottom: 8,
+                                    right: 8,
+                                    child: const Icon(Icons.crop, color: Colors.white70, size: 20),
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         },
