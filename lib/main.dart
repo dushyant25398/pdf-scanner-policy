@@ -159,6 +159,105 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
+
+Widget _buildBentoCard({
+  required BuildContext context,
+  required String title,
+  required String subtitle,
+  required IconData icon,
+  required Color color,
+  required VoidCallback onTap,
+  bool isLarge = false,
+  bool isLocked = false,
+  bool isNew = false,
+}) {
+  return ScaleButton(
+    onTap: onTap,
+    child: Container(
+      height: 130, // Consistently 130
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.1),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  letterSpacing: -0.5,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                subtitle,
+                style: GoogleFonts.poppins(
+                  color: Colors.grey.shade500,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          if (isNew)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  "NEW",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          if (isLocked)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Icon(Icons.lock_outline_rounded,
+                  size: 18, color: Colors.grey.shade400),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
 class HomeScreen extends StatefulWidget {
   final Function(bool) onThemeChanged;
   final ThemeMode themeMode;
@@ -176,7 +275,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   List<File> pdfFiles = [];
   final List<String> _scannedImagePaths = [];
   bool isSelectionMode = false;
-  Set<int> selectedIndexes = {};
+  Set<String> selectedPaths = {};
   bool _isProcessingScan = false;
   bool _isLoadingPdfs = false;
   
@@ -319,10 +418,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool get _isLoggedIn => FirebaseAuth.instance.currentUser != null;
 
   Future<void> _extractTextFromSelected(BuildContext context) async {
-    if (pdfFiles.isEmpty) return;
+    if (pdfFiles.isEmpty && selectedPaths.isEmpty) return;
     
-    int index = selectedIndexes.isEmpty ? 0 : selectedIndexes.first;
-    File file = pdfFiles[index];
+    File file;
+    if (selectedPaths.isNotEmpty) {
+      file = File(selectedPaths.first);
+    } else {
+      file = pdfFiles.first;
+    }
 
     showDialog(
       context: context,
@@ -603,14 +706,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() {
       _scannedImagePaths.clear();
     });
-  }
-
-  @override
-  void dispose() {
-    _bannerAd?.dispose();
-    _interstitialAd?.dispose();
-    _rewardedAd?.dispose();
-    super.dispose();
   }
 
   Future<void> savePdfPaths() async {
@@ -911,8 +1006,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     if (mergedFile != null && mergedFile is File) {
-      isSelectionMode = false;
-      selectedIndexes.clear();
+      setState(() {
+        isSelectionMode = false;
+        selectedPaths.clear();
+      });
       await StorageService.saveDocumentPath(mergedFile.path);
       await loadPdfPaths();
 
@@ -935,10 +1032,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       );
       return;
     }
-    final selectedFiles = <File>[];
-    for (var index in selectedIndexes) {
-      selectedFiles.add(pdfFiles[index]);
-    }
+    
+    final selectedFiles = selectedPaths.map((path) => File(path)).toList();
 
     if (selectedFiles.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Select at least 2 PDFs to merge")));
@@ -954,8 +1049,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     if (mergedFile != null && mergedFile is File) {
-      isSelectionMode = false;
-      selectedIndexes.clear();
+      setState(() {
+        isSelectionMode = false;
+        selectedPaths.clear();
+      });
       await StorageService.saveDocumentPath(mergedFile.path);
       await loadPdfPaths();
 
@@ -968,6 +1065,47 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _showInterstitialAd();
       }
     }
+  }
+
+  void _bulkMoveToFolder(BuildContext context) async {
+    if (selectedPaths.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Move Selected to Folder", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            ...["Uncategorized", "Work", "Personal", "Legal", "Medical", "Receipts"].map((folder) => ListTile(
+              leading: const Icon(Icons.folder_outlined, color: Color(0xFF4F46E5)),
+              title: Text(folder),
+              onTap: () async {
+                for (var path in selectedPaths) {
+                  await StorageService.updateDocumentFolder(path, folder);
+                }
+                if (mounted) {
+                  setState(() {
+                    isSelectionMode = false;
+                    selectedPaths.clear();
+                  });
+                  Navigator.pop(context);
+                  await loadPdfPaths();
+                  // Force a UI refresh for the Documents screen if it's currently being shown
+                  // by reloading paths and rebuilding.
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Moved items to $folder")),
+                  );
+                }
+              },
+            )),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<String?> _showFileNameDialog(BuildContext context, {String? initial}) async {
@@ -1023,6 +1161,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     _currentLanguage = lang['name']!;
                   });
                   Navigator.pop(context);
+                  // Trigger UI rebuild or localization change here if using a localization package
+                  // For now, we force a rebuild of the entire app to reflect changes if necessary
+                  (context as Element).markNeedsBuild(); 
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text("Language changed to ${_currentLanguage}")),
                   );
@@ -1179,6 +1320,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Column(
       children: [
         _buildBentoCard(
+          context: context,
           title: "Scan Document",
           subtitle: "Camera detection",
           icon: Icons.camera_alt_rounded,
@@ -1191,6 +1333,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           children: [
             Expanded(
               child: _buildBentoCard(
+                context: context,
                 title: "Images to PDF",
                 subtitle: "Convert batch",
                 icon: Icons.photo_library_rounded,
@@ -1201,6 +1344,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: 16),
             Expanded(
               child: _buildBentoCard(
+                context: context,
                 title: "Merge PDFs",
                 subtitle: "Combine files",
                 icon: Icons.merge_type_rounded,
@@ -1225,6 +1369,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           children: [
             Expanded(
               child: _buildBentoCard(
+                context: context,
                 title: "Edit & Sign",
                 subtitle: "Add text/sig",
                 icon: Icons.draw_rounded,
@@ -1246,6 +1391,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: 16),
             Expanded(
               child: _buildBentoCard(
+                context: context,
                 title: "Text (OCR)",
                 subtitle: "Scan to text",
                 icon: Icons.text_snippet_rounded,
@@ -1265,36 +1411,49 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ],
         ),
+        const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
               child: _buildBentoCard(
-                title: "Compression",
+                context: context,
+                title: "Compress PDF/Images",
                 subtitle: "Reduce size",
                 icon: Icons.compress_rounded,
-                color: const Color(0xFFF97316),
+                color: const Color(0xFF06B6D4),
                 isNew: true,
+                isLocked: !_isLoggedIn,
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CompressionScreen()),
-                  );
+                  if (!_isLoggedIn) {
+                    _showPremiumDialog(
+                      title: "Compress PDF/Images",
+                      message: "Unlock PDF and image compression feature. Login to continue! 🚀",
+                    );
+                  } else {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const CompressionScreen()));
+                  }
                 },
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: _buildBentoCard(
+                context: context,
                 title: "QR Scanner",
-                subtitle: "Fast scan",
+                subtitle: "Scan codes",
                 icon: Icons.qr_code_scanner_rounded,
-                color: const Color(0xFF06B6D4),
+                color: const Color(0xFFF43F5E),
                 isNew: true,
+                isLocked: !_isLoggedIn,
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const QrScannerScreen()),
-                  );
+                  if (!_isLoggedIn) {
+                    _showPremiumDialog(
+                      title: "QR Scanner",
+                      message: "Unlock QR and Barcode scanning. Login to continue! 🚀",
+                    );
+                  } else {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+                  }
                 },
               ),
             ),
@@ -1363,102 +1522,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildBentoCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-    bool isLarge = false,
-    bool isLocked = false,
-    bool isNew = false,
-  }) {
-    return ScaleButton(
-      onTap: onTap,
-      child: Container(
-        height: 130, // Consistently 130
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.1),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min, // Added
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(icon, color: color, size: 24),
-                ),
-                const SizedBox(height: 12), // Replaced Spacer to control height
-                Text(
-                  title,
-                  style: GoogleFonts.poppins( // Added GoogleFonts
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    letterSpacing: -0.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey.shade500,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-            if (isNew)
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    "NEW",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            if (isLocked)
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Icon(Icons.lock_outline_rounded,
-                    size: 18, color: Colors.grey.shade400),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
   Widget _buildRecentSection() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1638,7 +1701,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       itemCount: isHome ? (pdfFiles.length > 5 ? 5 : pdfFiles.length) : pdfFiles.length,
       itemBuilder: (context, index) {
         final file = pdfFiles[index];
-        final isSelected = selectedIndexes.contains(index);
+        final isSelected = selectedPaths.contains(file.path);
         final stats = file.statSync();
         final size = (stats.size / 1024).toStringAsFixed(1);
         final fileName = file.path.split(Platform.pathSeparator).last;
@@ -1650,10 +1713,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (isSelectionMode) {
                 setState(() {
                   if (isSelected) {
-                    selectedIndexes.remove(index);
-                    if (selectedIndexes.isEmpty) isSelectionMode = false;
+                    selectedPaths.remove(file.path);
+                    if (selectedPaths.isEmpty) isSelectionMode = false;
                   } else {
-                    selectedIndexes.add(index);
+                    selectedPaths.add(file.path);
                   }
                 });
               } else {
@@ -1689,10 +1752,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         onChanged: (val) {
                           setState(() {
                             if (val!) {
-                              selectedIndexes.add(index);
+                              selectedPaths.add(file.path);
                             } else {
-                              selectedIndexes.remove(index);
-                              if (selectedIndexes.isEmpty) isSelectionMode = false;
+                              selectedPaths.remove(file.path);
+                              if (selectedPaths.isEmpty) isSelectionMode = false;
                             }
                           });
                         },
@@ -1761,7 +1824,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 onLongPress: () {
                   setState(() {
                     isSelectionMode = true;
-                    selectedIndexes.add(index);
+                    selectedPaths.add(file.path);
                   });
                 },
               ),
@@ -1890,7 +1953,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   color: Colors.blueGrey,
                   onTap: () {
                     Navigator.pop(context);
-                    _showMoveToFolderInHome(file);
+                    _showMoveToFolderDialog(file);
                   },
                 ),
                 _buildActionItem(
@@ -1936,6 +1999,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showMoveToFolderDialog(File file) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Move to Folder", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            ...["Uncategorized", "Work", "Personal", "Legal", "Medical", "Receipts"].map((folder) => ListTile(
+              leading: const Icon(Icons.folder_outlined, color: Color(0xFF4F46E5)),
+              title: Text(folder),
+              onTap: () async {
+                await StorageService.updateDocumentFolder(file.path, folder);
+                Navigator.pop(context);
+                loadPdfPaths();
+              },
+            )),
+          ],
         ),
       ),
     );
@@ -2155,104 +2244,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildBentoCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-    bool isLarge = false,
-    bool isLocked = false,
-    bool isNew = false,
-  }) {
-    return ScaleButton(
-      onTap: onTap,
-      child: Container(
-        height: 130, // Consistently 130
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.1),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min, // Added
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(icon, color: color, size: 24),
-                ),
-                const SizedBox(height: 12), // Replaced Spacer to control height
-                Text(
-                  title,
-                  style: GoogleFonts.poppins( // Added GoogleFonts
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    letterSpacing: -0.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey.shade500,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-            if (isNew)
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    "NEW",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            if (isLocked)
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Icon(Icons.lock_outline_rounded,
-                    size: 18, color: Colors.grey.shade400),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -2261,13 +2252,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         elevation: 0,
         backgroundColor: Colors.transparent,
         title: Text(
-          isSelectionMode ? "${selectedIndexes.length} Selected" : "PDF Scanner Pro",
+          isSelectionMode ? "${selectedPaths.length} Selected" : "PDF Scanner Pro",
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
-          if (isSelectionMode)
+          if (isSelectionMode) ...[
+            IconButton(icon: const Icon(Icons.drive_file_move_rounded), onPressed: () => _bulkMoveToFolder(context)),
             IconButton(icon: const Icon(Icons.merge_type), onPressed: () => mergeSelectedPDFs(context))
-          else ...[
+          ] else ...[
             IconButton(icon: const Icon(Icons.translate_rounded), onPressed: _showLanguageDialog),
             IconButton(
                 icon: Icon(widget.themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode),
@@ -2288,7 +2280,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         children: [
           Column(
             children: [
-              Expanded(child: _selectedIndex == 0 ? _homeUI() : (_selectedIndex == 1 ? const DocumentsScreen() : _recentUI())),
+              Expanded(child: _selectedIndex == 0 ? _homeUI() : (_selectedIndex == 1 ? DocumentsScreen(
+                isSelectionMode: isSelectionMode,
+                selectedPaths: selectedPaths,
+                onSelectionModeChanged: (val) => setState(() => isSelectionMode = val),
+                onSelectionChanged: (val) => setState(() => selectedPaths = val),
+              ) : _recentUI())),
               if (_isAdLoaded && _bannerAd != null)
                 Container(
                   alignment: Alignment.center,
@@ -2330,23 +2327,38 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
         ],
       ),
-      floatingActionButton: _selectedIndex == 1
-          ? (isSelectionMode
-              ? FloatingActionButton.extended(
+      floatingActionButton: isSelectionMode
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: "move_bulk",
+                  onPressed: () => _bulkMoveToFolder(context),
+                  icon: const Icon(Icons.drive_file_move),
+                  label: const Text("Move"),
+                  backgroundColor: Colors.blueGrey,
+                  foregroundColor: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton.extended(
+                  heroTag: "merge_bulk",
                   onPressed: () => mergeSelectedPDFs(context),
                   icon: const Icon(Icons.merge_type),
-                  label: const Text("Merge Selected"),
+                  label: const Text("Merge"),
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
-                )
-              : FloatingActionButton.extended(
+                ),
+              ],
+            )
+          : (_selectedIndex == 1
+              ? FloatingActionButton.extended(
                   onPressed: () => _scanDocument(context),
                   icon: const Icon(Icons.camera_alt),
                   label: const Text("Scan New"),
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
-                ))
-          : null,
+                )
+              : null),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
@@ -2368,7 +2380,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 }
 
 class DocumentsScreen extends StatefulWidget {
-  const DocumentsScreen({super.key});
+  final bool isSelectionMode;
+  final Set<String> selectedPaths;
+  final Function(bool) onSelectionModeChanged;
+  final Function(Set<String>) onSelectionChanged;
+
+  const DocumentsScreen({
+    super.key,
+    required this.isSelectionMode,
+    required this.selectedPaths,
+    required this.onSelectionModeChanged,
+    required this.onSelectionChanged,
+  });
 
   @override
   State<DocumentsScreen> createState() => _DocumentsScreenState();
@@ -2400,66 +2423,80 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
     super.dispose();
   }
 
-  void _filterDocuments() async {
+  void _filterDocuments() {
     final query = _searchController.text.toLowerCase();
-    List<File> results = [];
-
-    for (var file in pdfList) {
-      final fileName = file.path.split(Platform.pathSeparator).last.toLowerCase();
-      final folder = await StorageService.getDocumentFolder(file.path);
-      
-      bool matchesSearch = fileName.contains(query);
-      bool matchesFolder = selectedFolder == "All" || folder == selectedFolder;
-
-      if (matchesSearch && matchesFolder) {
-        results.add(file);
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        filteredList = results;
-      });
-    }
+    setState(() {
+      filteredList = pdfList.where((file) {
+        final fileName = file.path.split(Platform.pathSeparator).last.toLowerCase();
+        final matchesQuery = fileName.contains(query);
+        
+        if (selectedFolder == "All") return matchesQuery;
+        
+        // Use cached metadata
+        return matchesQuery && _folderCache[file.path] == selectedFolder;
+      }).toList();
+    });
   }
 
+  Map<String, String> _folderCache = {};
+
   Future<void> _loadPdfs() async {
-    final files = await StorageService.getAllPdfs();
-    if (mounted) {
+    setState(() => isLoading = true);
+    try {
+      final files = await StorageService.getAllPdfs();
+      
+      // Pre-cache folders
+      Map<String, String> cache = {};
+      for (var file in files) {
+        cache[file.path] = await StorageService.getDocumentFolder(file.path);
+      }
+
       setState(() {
         pdfList = files;
+        _folderCache = cache;
+        filteredList = files;
         isLoading = false;
+        _filterDocuments();
       });
-      _filterDocuments();
+    } catch (e) {
+      debugPrint("Error loading PDFs: $e");
+      setState(() => isLoading = false);
     }
   }
 
   void _createNewFolder() {
-    TextEditingController folderController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Create Folder"),
-        content: TextField(
-          controller: folderController,
-          decoration: const InputDecoration(hintText: "Folder Name"),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          TextButton(
-            onPressed: () {
-              if (folderController.text.isNotEmpty) {
-                setState(() {
-                  folders.add(folderController.text);
-                });
-                Navigator.pop(context);
-              }
-            },
-            child: const Text("Create"),
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text("New Folder"),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(hintText: "Folder Name"),
+            autofocus: true,
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () {
+                if (controller.text.isNotEmpty) {
+                  setState(() {
+                    if (!folders.contains(controller.text)) {
+                      folders.add(controller.text);
+                    }
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text("Create"),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2601,41 +2638,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
             ],
           ),
         ),
-        Row(
-          children: [
-            Expanded(
-              child: _buildBentoCard(
-                title: "Compression",
-                subtitle: "Reduce size",
-                icon: Icons.compress_rounded,
-                color: const Color(0xFFF97316),
-                isNew: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CompressionScreen()),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildBentoCard(
-                title: "QR Scanner",
-                subtitle: "Fast scan",
-                icon: Icons.qr_code_scanner_rounded,
-                color: const Color(0xFF06B6D4),
-                isNew: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const QrScannerScreen()),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -2741,97 +2744,136 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
           final size = (stats.size / 1024).toStringAsFixed(1);
           final fileName = file.path.split(Platform.pathSeparator).last;
 
-          return FutureBuilder<String>(
-            future: StorageService.getDocumentFolder(file.path),
-            builder: (context, snapshot) {
-              final folder = snapshot.data ?? "Uncategorized";
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: ScaleButton(
-                  onLongPress: () => _showMoveToFolderDialog(file),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => Scaffold(
-                          appBar: AppBar(title: Text(fileName)),
-                          body: SfPdfViewer.file(file),
-                        ),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).cardTheme.color,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      leading: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFEF4444), size: 24),
-                      ),
-                      title: Text(
-                        fileName,
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              folder,
-                              style: const TextStyle(fontSize: 10, color: Color(0xFF4F46E5), fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            "$size KB • ${stats.modified.day}/${stats.modified.month}",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.share_rounded, color: Color(0xFF4F46E5), size: 20),
-                            onPressed: () => Share.shareXFiles([XFile(file.path)]),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.drive_file_move_outlined, color: Color(0xFF64748B), size: 20),
-                            onPressed: () => _showMoveToFolderDialog(file),
-                          ),
-                        ],
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: ScaleButton(
+              onLongPress: () {
+                widget.onSelectionModeChanged(true);
+                final newSelection = Set<String>.from(widget.selectedPaths);
+                newSelection.add(file.path);
+                widget.onSelectionChanged(newSelection);
+              },
+              onTap: () {
+                if (widget.isSelectionMode) {
+                  final newSelection = Set<String>.from(widget.selectedPaths);
+                  if (newSelection.contains(file.path)) {
+                    newSelection.remove(file.path);
+                    if (newSelection.isEmpty) widget.onSelectionModeChanged(false);
+                  } else {
+                    newSelection.add(file.path);
+                  }
+                  widget.onSelectionChanged(newSelection);
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => Scaffold(
+                        appBar: AppBar(title: Text(fileName)),
+                        body: SfPdfViewer.file(file),
                       ),
                     ),
+                  );
+                }
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: widget.selectedPaths.contains(file.path)
+                      ? const Color(0xFF4F46E5).withValues(alpha: 0.08)
+                      : Theme.of(context).cardTheme.color,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: widget.selectedPaths.contains(file.path)
+                        ? const Color(0xFF4F46E5).withValues(alpha: 0.3)
+                        : Colors.transparent,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              );
-            }
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: widget.isSelectionMode
+                      ? Checkbox(
+                          value: widget.selectedPaths.contains(file.path),
+                          activeColor: const Color(0xFF4F46E5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          onChanged: (val) {
+                            final newSelection = Set<String>.from(widget.selectedPaths);
+                            if (val == true) {
+                              newSelection.add(file.path);
+                            } else {
+                              newSelection.remove(file.path);
+                              if (newSelection.isEmpty) widget.onSelectionModeChanged(false);
+                            }
+                            widget.onSelectionChanged(newSelection);
+                          },
+                        )
+                      : Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFEF4444), size: 24),
+                        ),
+                  title: Text(
+                    fileName,
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Row(
+                    children: [
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            _folderCache[file.path] ?? "Uncategorized",
+                            style: const TextStyle(fontSize: 10, color: Color(0xFF4F46E5), fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        "$size KB • ${stats.modified.day}/${stats.modified.month}",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                  trailing: widget.isSelectionMode
+                      ? null
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.share_rounded, color: Color(0xFF4F46E5), size: 20),
+                              onPressed: () => Share.shareXFiles([XFile(file.path)]),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.drive_file_move_outlined, color: Color(0xFF64748B), size: 20),
+                              onPressed: () => _showMoveToFolderDialog(file),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
           );
         },
       ),

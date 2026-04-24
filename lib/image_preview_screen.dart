@@ -401,16 +401,32 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
                                   Positioned(
                                     top: 8,
                                     right: 8,
-                                    child: GestureDetector(
-                                      onTap: () => _removeImage(index),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.5),
-                                          shape: BoxShape.circle,
+                                    child: Row(
+                                      children: [
+                                        GestureDetector(
+                                          onTap: () => _cropImage(index),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.5),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(Icons.crop_rounded, size: 16, color: Colors.white),
+                                          ),
                                         ),
-                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
-                                      ),
+                                        const SizedBox(width: 8),
+                                        GestureDetector(
+                                          onTap: () => _removeImage(index),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.5),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(Icons.close, size: 16, color: Colors.white),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   Positioned(

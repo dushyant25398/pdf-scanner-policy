@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 class ScaleButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
-  const ScaleButton({super.key, required this.child, required this.onTap});
+  final VoidCallback? onLongPress;
+  const ScaleButton({super.key, required this.child, required this.onTap, this.onLongPress});
 
   @override
   State<ScaleButton> createState() => _ScaleButtonState();
@@ -29,6 +30,7 @@ class _ScaleButtonState extends State<ScaleButton> with SingleTickerProviderStat
         widget.onTap();
       },
       onTapCancel: () => _controller.reverse(),
+      onLongPress: widget.onLongPress,
       child: ScaleTransition(scale: _scaleAnimation, child: widget.child),
     );
   }
