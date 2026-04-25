@@ -11,7 +11,7 @@ class CloudService {
 
   User? get currentUser => _auth.currentUser;
 
-  Future<String?> uploadPdf(File file) async {
+  Future<String?> uploadPdf(File file, {String folder = 'Uncategorized'}) async {
     if (currentUser == null) return null;
 
     try {
@@ -23,7 +23,7 @@ class CloudService {
       await ref.putFile(file);
       String downloadUrl = await ref.getDownloadURL();
       
-      await _saveMetadata(fileName, downloadUrl);
+      await _saveMetadata(fileName, downloadUrl, folder: folder);
       
       return downloadUrl;
     } catch (e) {
@@ -32,7 +32,7 @@ class CloudService {
     }
   }
 
-  Future<void> _saveMetadata(String name, String url) async {
+  Future<void> _saveMetadata(String name, String url, {String folder = 'Uncategorized'}) async {
     if (currentUser == null) return;
     
     await _firestore
@@ -43,8 +43,25 @@ class CloudService {
         .set({
       'name': name,
       'url': url,
+      'folder': folder,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> updateMetadata(String name, {String? folder}) async {
+    if (currentUser == null) return;
+    
+    Map<String, dynamic> data = {};
+    if (folder != null) data['folder'] = folder;
+    
+    if (data.isEmpty) return;
+
+    await _firestore
+        .collection('users')
+        .doc(currentUser!.uid)
+        .collection('pdfs')
+        .doc(name)
+        .update(data);
   }
 
   Stream<QuerySnapshot> getCloudPdfsStream() {

@@ -92,6 +92,16 @@ class StorageService {
     }
   }
 
+  static Future<bool> isPremium() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('is_premium') ?? false;
+  }
+
+  static Future<void> setPremium(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_premium', value);
+  }
+
   static Future<List<File>> getAllPdfs() async {
     final prefs = await SharedPreferences.getInstance();
     final List<String> savedPaths = prefs.getStringList(_storageKey) ?? [];
@@ -99,11 +109,20 @@ class StorageService {
     final List<File> files = [];
     final List<String> validPaths = [];
 
-    for (String path in savedPaths) {
-      final file = File(path);
-      if (await file.exists()) {
+    // Parallelize file existence checks
+    final existenceResults = await Future.wait(
+      savedPaths.map((path) async {
+        final file = File(path);
+        final exists = await file.exists();
+        return exists ? file : null;
+      })
+    );
+
+    for (int i = 0; i < existenceResults.length; i++) {
+      final file = existenceResults[i];
+      if (file != null) {
         files.add(file);
-        validPaths.add(path);
+        validPaths.add(savedPaths[i]);
       }
     }
 

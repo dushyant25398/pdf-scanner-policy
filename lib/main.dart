@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,6 +30,7 @@ import 'ocr_result_screen.dart';
 import 'document_picker_screen.dart';
 import 'qr_scanner_screen.dart';
 import 'compression_screen.dart';
+import 'premium_screen.dart';
 import 'package:image/image.dart' as img;
 import 'package:pdfx/pdfx.dart' as pdfx;
 import 'package:shimmer/shimmer.dart';
@@ -57,10 +59,17 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   ThemeMode _themeMode = ThemeMode.light;
+  Locale _locale = const Locale('en');
 
   void toggleTheme(bool isDark) {
     setState(() {
       _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
+  }
+
+  void setLocale(String languageCode) {
+    setState(() {
+      _locale = Locale(languageCode);
     });
   }
 
@@ -70,6 +79,19 @@ class _MyAppState extends State<MyApp> {
       debugShowCheckedModeBanner: false,
       title: 'Premium PDF Scanner',
       themeMode: _themeMode,
+      locale: _locale,
+      supportedLocales: const [
+        Locale('en'),
+        Locale('es'),
+        Locale('fr'),
+        Locale('de'),
+        Locale('hi'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         useMaterial3: true,
         textTheme: GoogleFonts.poppinsTextTheme(),
@@ -77,8 +99,7 @@ class _MyAppState extends State<MyApp> {
           seedColor: const Color(0xFF4F46E5),
           primary: const Color(0xFF4F46E5),
           secondary: const Color(0xFF64748B),
-          surface: Colors.white,
-          background: const Color(0xFFF8FAFC),
+          surface: const Color(0xFFF8FAFC),
         ),
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         appBarTheme: const AppBarTheme(
@@ -116,8 +137,7 @@ class _MyAppState extends State<MyApp> {
           seedColor: const Color(0xFF818CF8),
           brightness: Brightness.dark,
           primary: const Color(0xFF818CF8),
-          surface: const Color(0xFF1E293B),
-          background: const Color(0xFF0F172A),
+          surface: const Color(0xFF0F172A),
         ),
         scaffoldBackgroundColor: const Color(0xFF0F172A),
         fontFamily: 'Poppins',
@@ -143,6 +163,8 @@ class _MyAppState extends State<MyApp> {
             return HomeScreen(
               onThemeChanged: toggleTheme,
               themeMode: _themeMode,
+              onLanguageChanged: setLocale,
+              currentLocale: _locale,
             );
           }
           return const LoginScreen();
@@ -153,6 +175,8 @@ class _MyAppState extends State<MyApp> {
         '/home': (context) => HomeScreen(
               onThemeChanged: toggleTheme,
               themeMode: _themeMode,
+              onLanguageChanged: setLocale,
+              currentLocale: _locale,
             ),
       },
     );
@@ -261,9 +285,16 @@ Widget _buildBentoCard({
 class HomeScreen extends StatefulWidget {
   final Function(bool) onThemeChanged;
   final ThemeMode themeMode;
+  final Function(String) onLanguageChanged;
+  final Locale currentLocale;
 
-  const HomeScreen(
-      {super.key, required this.onThemeChanged, required this.themeMode});
+  const HomeScreen({
+    super.key,
+    required this.onThemeChanged,
+    required this.themeMode,
+    required this.onLanguageChanged,
+    required this.currentLocale,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -296,10 +327,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _blinkAnimation;
 
   final ScrollController _homeScrollController = ScrollController();
+  final List<Map<String, String>> _languages = [
+    {'name': 'English', 'code': 'en', 'flag': '🇺🇸'},
+    {'name': 'Español', 'code': 'es', 'flag': '🇪🇸'},
+    {'name': 'Français', 'code': 'fr', 'flag': '🇫🇷'},
+    {'name': 'Deutsch', 'code': 'de', 'flag': '🇩🇪'},
+    {'name': 'हिन्दी', 'code': 'hi', 'flag': '🇮🇳'},
+  ];
+  bool _isSearching = false;
+  String _searchQuery = "";
+  bool _isPremium = false;
 
   @override
   void initState() {
     super.initState();
+    _checkPremium();
     loadPdfPaths();
     _loadBannerAd();
     _loadInterstitialAd();
@@ -335,9 +377,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  Future<void> _checkPremium() async {
+    final isPremium = await StorageService.isPremium();
+    if (mounted) {
+      setState(() {
+        _isPremium = isPremium;
+      });
+      if (_isPremium) {
+        _bannerAd?.dispose();
+        _bannerAd = null;
+        _isAdLoaded = false;
+      }
+    }
+  }
+
   void _loadRewardedAd() {
     RewardedAd.load(
-      adUnitId: "ca-app-pub-3940256099942544/5224354917", // Test ID
+      adUnitId: "ca-app-pub-8899181087292094/3998188285", // Production ID
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
@@ -355,6 +411,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _showRewardedAd(VoidCallback onRewardEarned) {
+    if (_isPremium) {
+      onRewardEarned();
+      return;
+    }
     if (_isRewardedReady && _rewardedAd != null) {
       _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
         onAdShowedFullScreenContent: (ad) => debugPrint("Rewarded Ad Showed."),
@@ -417,14 +477,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   bool get _isLoggedIn => FirebaseAuth.instance.currentUser != null;
 
-  Future<void> _extractTextFromSelected(BuildContext context) async {
-    if (pdfFiles.isEmpty && selectedPaths.isEmpty) return;
+  Future<void> _extractTextFromSelected(BuildContext context, {File? specificFile}) async {
+    if (pdfFiles.isEmpty && selectedPaths.isEmpty && specificFile == null) return;
     
-    File file;
-    if (selectedPaths.isNotEmpty) {
-      file = File(selectedPaths.first);
-    } else {
-      file = pdfFiles.first;
+    File? file = specificFile;
+    if (file == null) {
+      if (selectedPaths.isNotEmpty) {
+        file = File(selectedPaths.first);
+      } else {
+        file = pdfFiles.first;
+      }
     }
 
     showDialog(
@@ -450,8 +512,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       for (int i = 1; i <= document.pagesCount; i++) {
         final page = await document.getPage(i);
         final pageImage = await page.render(
-          width: page.width * 2,
-          height: page.height * 2,
+          width: page.width * 3.5,
+          height: page.height * 3.5,
           format: pdfx.PdfPageImageFormat.jpeg,
           quality: 90,
         );
@@ -476,7 +538,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       await document.close();
       await textRecognizer.close();
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       Navigator.pop(context); // Close loading
 
       Navigator.push(
@@ -486,13 +548,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
       );
     } catch (e) {
-      if (mounted) Navigator.pop(context);
+      if (!context.mounted) return;
+      Navigator.pop(context);
       debugPrint("OCR extraction error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to extract text: $e")),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to extract text: $e")),
+      );
     }
   }
 
@@ -515,7 +576,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       await textRecognizer.close();
       if (tempFile.existsSync()) await tempFile.delete();
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       Navigator.pop(context); // Close loading
 
       Navigator.push(
@@ -525,13 +586,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
       );
     } catch (e) {
-      if (mounted) Navigator.pop(context);
+      if (!context.mounted) return;
+      Navigator.pop(context); // Close loading
       debugPrint("OCR Error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("OCR failed: $e")),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("OCR failed: $e")),
+      );
     }
   }
 
@@ -624,6 +684,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _loadBannerAd() {
+    if (_isPremium) return;
     _bannerAd = BannerAd(
       adUnitId: "ca-app-pub-8899181087292094/6949058517", // Production ID
       size: AdSize.banner,
@@ -664,6 +725,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _showInterstitialAd() {
+    if (_isPremium) return;
     if (_isInterstitialReady && _interstitialAd != null) {
       _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
         onAdShowedFullScreenContent: (ad) => debugPrint("Interstitial Ad Showed."),
@@ -734,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _scanDocument(BuildContext context) async {
     if (_isProcessingScan) return;
 
-    if (!_isLoggedIn && _scanCount >= _maxGuestScans) {
+    if (!_isPremium && !_isLoggedIn && _scanCount >= _maxGuestScans) {
       _showPremiumDialog(
         title: "Limit Reached",
         message: "Guest limit reached! Login with Google for unlimited scans or watch a video to get one more.",
@@ -875,7 +937,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       // Auto-sync for logged in users
       if (_isLoggedIn) {
-        cloudService.uploadPdf(file);
+        cloudService.uploadPdf(file, folder: "Uncategorized");
       }
 
       await _incrementScanCount();
@@ -893,7 +955,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _pickMultipleImages(BuildContext context) async {
-    if (!_isLoggedIn && _scanCount >= _maxGuestScans) {
+    if (!_isPremium && !_isLoggedIn && _scanCount >= _maxGuestScans) {
       _showPremiumDialog(
         title: "Limit Reached",
         message: "Guest limit reached! Login with Google to import more images or watch a video to get one more.",
@@ -917,7 +979,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         
         // Auto-sync for logged in users
         if (_isLoggedIn) {
-          cloudService.uploadPdf(result);
+          cloudService.uploadPdf(result, folder: "Uncategorized");
         }
 
         await _incrementScanCount();
@@ -930,7 +992,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _pickAndMergePDFs(BuildContext context) async {
-    if (!_isLoggedIn) {
+    if (!_isPremium && !_isLoggedIn) {
       _showPremiumDialog(
         title: "Import & Merge",
         message: "Importing and merging external PDFs is a premium feature. Login to unlock! 🚀",
@@ -1014,7 +1076,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       await loadPdfPaths();
 
       if (_isLoggedIn) {
-        cloudService.uploadPdf(mergedFile);
+        cloudService.uploadPdf(mergedFile, folder: "Uncategorized");
       }
 
       if (mounted) {
@@ -1025,7 +1087,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> mergeSelectedPDFs(BuildContext context) async {
-    if (!_isLoggedIn) {
+    if (!_isPremium && !_isLoggedIn) {
       _showPremiumDialog(
         title: "Merge PDF",
         message: "Merging multiple documents is a premium feature. Login to unlock! 🚀",
@@ -1057,12 +1119,63 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       await loadPdfPaths();
 
       if (_isLoggedIn) {
-        cloudService.uploadPdf(mergedFile);
+        cloudService.uploadPdf(mergedFile, folder: "Uncategorized");
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("PDFs Merged Successfully ✅")));
         _showInterstitialAd();
+      }
+    }
+  }
+
+  Future<void> _bulkDelete(BuildContext context) async {
+    if (selectedPaths.isEmpty) return;
+
+    bool? confirm = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Delete ${selectedPaths.length} items?"),
+        content: const Text("These files will be permanently deleted from your device and cloud sync."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete All", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isBulkProcessing = true);
+
+      try {
+        for (var path in selectedPaths) {
+          final file = File(path);
+          if (FirebaseAuth.instance.currentUser != null) {
+            await cloudService.deleteFromCloud(path.split(Platform.pathSeparator).last);
+          }
+          await StorageService.removeDocumentPath(path);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        }
+        
+        if (mounted) {
+          setState(() {
+            isSelectionMode = false;
+            selectedPaths.clear();
+            _isBulkProcessing = false;
+          });
+          await loadPdfPaths();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Selected documents deleted successfully 🗑️")));
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isBulkProcessing = false);
+        }
+        debugPrint("Bulk delete error: $e");
       }
     }
   }
@@ -1084,21 +1197,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               leading: const Icon(Icons.folder_outlined, color: Color(0xFF4F46E5)),
               title: Text(folder),
               onTap: () async {
-                for (var path in selectedPaths) {
-                  await StorageService.updateDocumentFolder(path, folder);
-                }
-                if (mounted) {
-                  setState(() {
-                    isSelectionMode = false;
-                    selectedPaths.clear();
-                  });
-                  Navigator.pop(context);
-                  await loadPdfPaths();
-                  // Force a UI refresh for the Documents screen if it's currently being shown
-                  // by reloading paths and rebuilding.
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Moved items to $folder")),
-                  );
+                setState(() => _isBulkProcessing = true);
+                Navigator.pop(context);
+                try {
+                  for (var path in selectedPaths) {
+                    await StorageService.updateDocumentFolder(path, folder);
+                    if (_isLoggedIn) {
+                      await cloudService.updateMetadata(path.split(Platform.pathSeparator).last, folder: folder);
+                    }
+                  }
+                  if (mounted) {
+                    setState(() {
+                      isSelectionMode = false;
+                      selectedPaths.clear();
+                      _isBulkProcessing = false;
+                    });
+                    await loadPdfPaths();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Moved items to $folder")),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) setState(() => _isBulkProcessing = false);
                 }
               },
             )),
@@ -1126,51 +1246,391 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  String _currentLanguage = "English";
-  final List<Map<String, String>> _languages = [
-    {"name": "English", "code": "en", "flag": "🇺🇸"},
-    {"name": "Spanish", "code": "es", "flag": "🇪🇸"},
-    {"name": "French", "code": "fr", "flag": "🇫🇷"},
-    {"name": "German", "code": "de", "flag": "🇩🇪"},
-    {"name": "Hindi", "code": "hi", "flag": "🇮🇳"},
-  ];
+  bool _isBulkProcessing = false;
+
+  String _getLanguageName(String code) {
+    return _languages.firstWhere((l) => l['code'] == code, orElse: () => _languages[0])['name']!;
+  }
+
+  String _t(String key) {
+    // Simple translation map for demonstration
+    final translations = {
+      'en': {
+        'quick_actions': 'Quick Actions',
+        'recent_documents': 'Recent Documents',
+        'scan_doc': 'Scan Document',
+        'camera_detection': 'Camera detection',
+        'images_to_pdf': 'Images to PDF',
+        'convert_batch': 'Convert batch',
+        'merge_pdfs': 'Merge PDFs',
+        'combine_files': 'Combine files',
+        'edit_sign': 'Edit & Sign',
+        'add_text_sig': 'Add text/sig',
+        'text_ocr': 'Text (OCR)',
+        'scan_to_text': 'Scan to text',
+        'compress_files': 'Compress PDF/Images',
+        'reduce_size': 'Reduce size',
+        'qr_scanner': 'QR Scanner',
+        'scan_codes': 'Scan codes',
+        'get_premium': 'Get Premium Access',
+        'welcome_back': 'Welcome back,',
+        'hello': 'Hello,',
+        'guest_user': 'Guest User',
+        'login': 'Login',
+        'sort_by': 'Sort Documents By',
+        'date_modified': 'Date Modified',
+        'name_az': 'Name (A-Z)',
+        'file_size': 'File Size',
+        'select_language': 'Select Language',
+        'see_all': 'See All',
+        'new_tag': 'NEW',
+        'unlock_merge_title': 'Unlock Merge',
+        'unlock_merge_msg': 'Merging multiple PDFs is a premium feature. Login to unlock! 🚀',
+        'edit_sign_title': 'Edit & Sign',
+        'edit_sign_msg': 'Unlock professional editing and digital signatures. Login to continue! 🚀',
+        'ocr_feature_title': 'OCR Feature',
+        'ocr_feature_msg': 'Extract text from images using AI. Login to unlock! 🚀',
+        'compress_feature_title': 'Compress PDF/Images',
+        'compress_feature_msg': 'Unlock PDF and image compression feature. Login to continue! 🚀',
+        'qr_scanner_title': 'QR Scanner',
+        'qr_scanner_msg': 'Unlock QR and Barcode scanning. Login to continue! 🚀',
+      },
+      'es': {
+        'quick_actions': 'Acciones Rápidas',
+        'recent_documents': 'Documentos Recientes',
+        'scan_doc': 'Escanear Documento',
+        'camera_detection': 'Detección de cámara',
+        'images_to_pdf': 'Imágenes a PDF',
+        'convert_batch': 'Conversión por lotes',
+        'merge_pdfs': 'Combinar PDFs',
+        'combine_files': 'Combinar archivos',
+        'edit_sign': 'Editar y Firmar',
+        'add_text_sig': 'Añadir texto/firma',
+        'text_ocr': 'Texto (OCR)',
+        'scan_to_text': 'Escanear a texto',
+        'compress_files': 'Comprimir PDF/Imágenes',
+        'reduce_size': 'Reducir tamaño',
+        'qr_scanner': 'Escáner QR',
+        'scan_codes': 'Escanear códigos',
+        'get_premium': 'Acceso Premium',
+        'welcome_back': 'Bienvenido de nuevo,',
+        'hello': 'Hola,',
+        'guest_user': 'Usuario invitado',
+        'login': 'Iniciar sesión',
+        'sort_by': 'Ordenar por',
+        'date_modified': 'Fecha de modificación',
+        'name_az': 'Nombre (A-Z)',
+        'file_size': 'Tamaño',
+        'select_language': 'Idioma',
+        'see_all': 'Ver todo',
+        'new_tag': 'NUEVO',
+        'unlock_merge_title': 'Desbloquear Combinar',
+        'unlock_merge_msg': 'Combinar PDFs es una función premium. ¡Inicia sesión! 🚀',
+        'edit_sign_title': 'Editar y Firmar',
+        'edit_sign_msg': 'Desbloquea edición profesional y firmas digitales. 🚀',
+        'ocr_feature_title': 'Función OCR',
+        'ocr_feature_msg': 'Extrae texto de imágenes usando IA. ¡Desbloquéalo! 🚀',
+        'compress_feature_title': 'Comprimir PDF',
+        'compress_feature_msg': 'Desbloquea la compresión de PDF e imágenes. 🚀',
+        'qr_scanner_title': 'Escáner QR',
+        'qr_scanner_msg': 'Desbloquea el escaneo de QR y códigos de barras. 🚀',
+      },
+      'fr': {
+        'quick_actions': 'Actions Rapides',
+        'recent_documents': 'Documents Récents',
+        'scan_doc': 'Scanner Document',
+        'camera_detection': 'Détection de caméra',
+        'images_to_pdf': 'Images en PDF',
+        'convert_batch': 'Conversion par lot',
+        'merge_pdfs': 'Fusionner les PDF',
+        'combine_files': 'Combiner des fichiers',
+        'edit_sign': 'Modifier et Signer',
+        'add_text_sig': 'Ajouter texte/signature',
+        'text_ocr': 'Texte (OCR)',
+        'scan_to_text': 'Scanner vers texte',
+        'compress_files': 'Compresser PDF/Images',
+        'reduce_size': 'Réduire la taille',
+        'qr_scanner': 'Scanner QR',
+        'scan_codes': 'Scanner des codes',
+        'get_premium': 'Accès Premium',
+        'welcome_back': 'Bon retour,',
+        'hello': 'Bonjour,',
+        'guest_user': 'Utilisateur invité',
+        'login': 'Connexion',
+        'sort_by': 'Trier par',
+        'date_modified': 'Date de modification',
+        'name_az': 'Nom (A-Z)',
+        'file_size': 'Taille',
+        'select_language': 'Langue',
+        'see_all': 'Voir tout',
+        'new_tag': 'NOUVEAU',
+        'unlock_merge_title': 'Débloquer Fusion',
+        'unlock_merge_msg': 'La fusion est une fonction premium. Connectez-vous! 🚀',
+        'edit_sign_title': 'Modifier et Signer',
+        'edit_sign_msg': 'Débloquez l\'édition pro et les signatures. 🚀',
+        'ocr_feature_title': 'Fonction OCR',
+        'ocr_feature_msg': 'Extrayez le texte avec l\'IA. Débloquez! 🚀',
+        'compress_feature_title': 'Compresser PDF',
+        'compress_feature_msg': 'Débloquez la compression PDF et images. 🚀',
+        'qr_scanner_title': 'Scanner QR',
+        'qr_scanner_msg': 'Débloquez le scan QR et codes-barres. 🚀',
+      },
+      'de': {
+        'quick_actions': 'Schnellaktionen',
+        'recent_documents': 'Letzte Dokumente',
+        'scan_doc': 'Dokument Scannen',
+        'camera_detection': 'Kameraerkennung',
+        'images_to_pdf': 'Bilder in PDF',
+        'convert_batch': 'Stapelkonvertierung',
+        'merge_pdfs': 'PDFs zusammenführen',
+        'combine_files': 'Dateien kombinieren',
+        'edit_sign': 'Bearbeiten & Unterschreiben',
+        'add_text_sig': 'Text/Unterschrift hinzufügen',
+        'text_ocr': 'Text (OCR)',
+        'scan_to_text': 'Zu Text scannen',
+        'compress_files': 'PDF/Bilder komprimieren',
+        'reduce_size': 'Größe reduzieren',
+        'qr_scanner': 'QR-Scanner',
+        'scan_codes': 'Codes scannen',
+        'get_premium': 'Premium erhalten',
+        'welcome_back': 'Willkommen zurück,',
+        'hello': 'Hallo,',
+        'guest_user': 'Gastbenutzer',
+        'login': 'Anmelden',
+        'sort_by': 'Sortieren nach',
+        'date_modified': 'Änderungsdatum',
+        'name_az': 'Name (A-Z)',
+        'file_size': 'Größe',
+        'select_language': 'Sprache',
+        'see_all': 'Alle sehen',
+        'new_tag': 'NEU',
+        'unlock_merge_title': 'Zusammenführen freischalten',
+        'unlock_merge_msg': 'Zusammenführen ist ein Premium-Feature. Anmelden! 🚀',
+        'edit_sign_title': 'Bearbeiten & Signieren',
+        'edit_sign_msg': 'Pro-Bearbeitung und Signaturen freischalten. 🚀',
+        'ocr_feature_title': 'OCR-Funktion',
+        'ocr_feature_msg': 'Text mit KI extrahieren. Freischalten! 🚀',
+        'compress_feature_title': 'PDF komprimieren',
+        'compress_feature_msg': 'PDF- und Bildkompression freischalten. 🚀',
+        'qr_scanner_title': 'QR-Scanner',
+        'qr_scanner_msg': 'QR- und Barcode-Scan freischalten. 🚀',
+      },
+      'hi': {
+        'quick_actions': 'त्वरित कार्रवाई',
+        'recent_documents': 'हाल के दस्तावेज़',
+        'scan_doc': 'दस्तावेज़ स्कैन करें',
+        'camera_detection': 'कैमरा डिटेक्शन',
+        'images_to_pdf': 'इमेज से पीडीएफ',
+        'convert_batch': 'बैच कन्वर्ट',
+        'merge_pdfs': 'पीडीएफ मर्ज करें',
+        'combine_files': 'फाइलें जोड़ें',
+        'edit_sign': 'संपादित करें और साइन करें',
+        'add_text_sig': 'टेक्स्ट/साइन जोड़ें',
+        'text_ocr': 'टेक्स्ट (OCR)',
+        'scan_to_text': 'टेक्स्ट में स्कैन करें',
+        'compress_files': 'पीडीएफ/इमेज कंप्रेस करें',
+        'reduce_size': 'साइज कम करें',
+        'qr_scanner': 'क्यूआर स्कैनर',
+        'scan_codes': 'कोड स्कैन करें',
+        'get_premium': 'प्रीमियम एक्सेस',
+        'welcome_back': 'वापसी पर स्वागत है,',
+        'hello': 'नमस्ते,',
+        'guest_user': 'अतिथि उपयोगकर्ता',
+        'login': 'लॉगिन करें',
+        'sort_by': 'क्रमित करें',
+        'date_modified': 'संशोधित तिथि',
+        'name_az': 'नाम (A-Z)',
+        'file_size': 'फाइल साइज',
+        'select_language': 'भाषा चुनें',
+        'see_all': 'सभी देखें',
+        'new_tag': 'नया',
+        'unlock_merge_title': 'मर्ज अनलॉक करें',
+        'unlock_merge_msg': 'पीडीएफ मर्ज करना एक प्रीमियम फीचर है। लॉगिन करें! 🚀',
+        'edit_sign_title': 'संपादित करें और साइन करें',
+        'edit_sign_msg': 'प्रोफेशनल एडिटिंग और डिजिटल साइन अनलॉक करें। 🚀',
+        'ocr_feature_title': 'OCR फीचर',
+        'ocr_feature_msg': 'AI का उपयोग करके टेक्स्ट निकालें। अनलॉक करें! 🚀',
+        'compress_feature_title': 'पीडीएफ कंप्रेस करें',
+        'compress_feature_msg': 'पीडीएफ और इमेज कंप्रेस फीचर अनलॉक करें। 🚀',
+        'qr_scanner_title': 'क्यूआर स्कैनर',
+        'qr_scanner_msg': 'क्यूआर और बारकोड स्कैनिंग अनलॉक करें। 🚀',
+      },
+    };
+    return translations[widget.currentLocale.languageCode]?[key] ?? translations['en']![key]!;
+  }
+
+  void _showSortDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Text(
+              _t('sort_by'),
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildSortOption(
+              icon: Icons.calendar_today_rounded,
+              label: _t('date_modified'),
+              color: const Color(0xFF6366F1),
+              onTap: () {
+                sortByDate();
+                Navigator.pop(context);
+              },
+            ),
+            _buildSortOption(
+              icon: Icons.sort_by_alpha_rounded,
+              label: _t('name_az'),
+              color: const Color(0xFF10B981),
+              onTap: () {
+                sortByName();
+                Navigator.pop(context);
+              },
+            ),
+            _buildSortOption(
+              icon: Icons.sd_storage_rounded,
+              label: _t('file_size'),
+              color: const Color(0xFFF59E0B),
+              onTap: () {
+                setState(() {
+                  pdfFiles.sort((a, b) => b.lengthSync().compareTo(a.lengthSync()));
+                });
+                Navigator.pop(context);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: color, size: 22),
+      ),
+      title: Text(
+        label,
+        style: GoogleFonts.poppins(
+          fontWeight: FontWeight.w500,
+          fontSize: 15,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
 
   void _showLanguageDialog() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Select Language", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _languages.length,
-            itemBuilder: (context, index) {
-              final lang = _languages[index];
-              final isSelected = _currentLanguage == lang['name'];
-              return ListTile(
-                leading: Text(lang['flag']!, style: const TextStyle(fontSize: 24)),
-                title: Text(lang['name']!, style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isSelected ? const Color(0xFF4F46E5) : null,
-                )),
-                trailing: isSelected ? const Icon(Icons.check_circle, color: Color(0xFF4F46E5)) : null,
-                onTap: () {
-                  setState(() {
-                    _currentLanguage = lang['name']!;
-                  });
-                  Navigator.pop(context);
-                  // Trigger UI rebuild or localization change here if using a localization package
-                  // For now, we force a rebuild of the entire app to reflect changes if necessary
-                  (context as Element).markNeedsBuild(); 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Language changed to ${_currentLanguage}")),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Text(
+              _t('select_language'),
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _languages.length,
+                itemBuilder: (context, index) {
+                  final lang = _languages[index];
+                  final isSelected = widget.currentLocale.languageCode == lang['code'];
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFF4F46E5).withValues(alpha: 0.05) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isSelected ? const Color(0xFF4F46E5).withValues(alpha: 0.3) : Colors.transparent,
+                      ),
+                    ),
+                    child: ListTile(
+                      leading: Text(lang['flag']!, style: const TextStyle(fontSize: 24)),
+                      title: Text(
+                        lang['name']!,
+                        style: GoogleFonts.poppins(
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                          color: isSelected ? const Color(0xFF4F46E5) : null,
+                        ),
+                      ),
+                      trailing: isSelected ? const Icon(Icons.check_circle, color: Color(0xFF4F46E5)) : null,
+                      onTap: () {
+                        final langCode = lang['code']!;
+                        widget.onLanguageChanged(langCode);
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text("Language changed to ${lang['name']}"),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        );
+                      },
+                    ),
                   );
                 },
-              );
-            },
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1205,9 +1665,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        "Quick Actions",
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                      Text(
+                        _t('quick_actions'),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5),
                       ),
                       const SizedBox(height: 20),
                       _buildBentoGrid(),
@@ -1239,7 +1699,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _isLoggedIn ? "Welcome back," : "Hello,",
+            _isLoggedIn ? _t('welcome_back') : _t('hello'),
             style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
           ),
           const SizedBox(height: 4),
@@ -1248,7 +1708,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               Expanded(
                 child: Text(
-                  _isLoggedIn ? user?.displayName?.split(' ').first ?? "User" : "Guest User",
+                  _isLoggedIn ? user?.displayName?.split(' ').first ?? "User" : _t('guest_user'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 32,
@@ -1261,7 +1721,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 TextButton.icon(
                   onPressed: _signInWithGoogle,
                   icon: const Icon(Icons.login, color: Colors.white, size: 18),
-                  label: const Text("Login", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  label: Text(_t('login'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   style: TextButton.styleFrom(
                     backgroundColor: Colors.white.withValues(alpha: 0.15),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1271,7 +1731,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 24),
           ScaleButton(
-            onTap: () {}, // Trigger Premium Flow
+            onTap: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PremiumScreen()),
+              );
+              if (result == true) {
+                _checkPremium();
+              }
+            },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
@@ -1297,7 +1765,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    "Get Premium Access",
+                    _t('get_premium'),
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -1321,8 +1789,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       children: [
         _buildBentoCard(
           context: context,
-          title: "Scan Document",
-          subtitle: "Camera detection",
+          title: _t('scan_doc'),
+          subtitle: _t('camera_detection'),
           icon: Icons.camera_alt_rounded,
           color: const Color(0xFF6366F1),
           isLarge: true,
@@ -1334,8 +1802,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _buildBentoCard(
                 context: context,
-                title: "Images to PDF",
-                subtitle: "Convert batch",
+                title: _t('images_to_pdf'),
+                subtitle: _t('convert_batch'),
                 icon: Icons.photo_library_rounded,
                 color: const Color(0xFF10B981),
                 onTap: () => _pickMultipleImages(context),
@@ -1345,16 +1813,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _buildBentoCard(
                 context: context,
-                title: "Merge PDFs",
-                subtitle: "Combine files",
+                title: _t('merge_pdfs'),
+                subtitle: _t('combine_files'),
                 icon: Icons.merge_type_rounded,
                 color: const Color(0xFFF59E0B),
-                isLocked: !_isLoggedIn,
+                isLocked: !_isPremium && !_isLoggedIn,
                 onTap: () {
-                  if (!_isLoggedIn) {
+                  if (!_isPremium && !_isLoggedIn) {
                     _showPremiumDialog(
-                      title: "Unlock Merge",
-                      message: "Merging multiple PDFs is a premium feature. Login to unlock! 🚀",
+                      title: _t('unlock_merge_title'),
+                      message: _t('unlock_merge_msg'),
                     );
                   } else {
                     _pickAndMergePDFs(context);
@@ -1370,16 +1838,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _buildBentoCard(
                 context: context,
-                title: "Edit & Sign",
-                subtitle: "Add text/sig",
+                title: _t('edit_sign'),
+                subtitle: _t('add_text_sig'),
                 icon: Icons.draw_rounded,
                 color: const Color(0xFF8B5CF6),
-                isLocked: !_isLoggedIn,
+                isLocked: !_isPremium && !_isLoggedIn,
                 onTap: () {
-                  if (!_isLoggedIn) {
+                  if (!_isPremium && !_isLoggedIn) {
                     _showPremiumDialog(
-                      title: "Edit & Sign",
-                      message: "Unlock professional editing and digital signatures. Login to continue! 🚀",
+                      title: _t('edit_sign_title'),
+                      message: _t('edit_sign_msg'),
                     );
                   } else {
                     // Navigate to picker logic (existing)
@@ -1392,16 +1860,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _buildBentoCard(
                 context: context,
-                title: "Text (OCR)",
-                subtitle: "Scan to text",
+                title: _t('text_ocr'),
+                subtitle: _t('scan_to_text'),
                 icon: Icons.text_snippet_rounded,
                 color: const Color(0xFFEC4899),
-                isLocked: !_isLoggedIn,
+                isLocked: !_isPremium && !_isLoggedIn,
                 onTap: () {
-                  if (!_isLoggedIn) {
+                  if (!_isPremium && !_isLoggedIn) {
                     _showPremiumDialog(
-                      title: "OCR Feature",
-                      message: "Extract text from images using AI. Login to unlock! 🚀",
+                      title: _t('ocr_feature_title'),
+                      message: _t('ocr_feature_msg'),
                     );
                   } else {
                     _extractTextFromSelected(context);
@@ -1417,17 +1885,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _buildBentoCard(
                 context: context,
-                title: "Compress PDF/Images",
-                subtitle: "Reduce size",
+                title: _t('compress_files'),
+                subtitle: _t('reduce_size'),
                 icon: Icons.compress_rounded,
                 color: const Color(0xFF06B6D4),
                 isNew: true,
-                isLocked: !_isLoggedIn,
+                isLocked: !_isPremium && !_isLoggedIn,
                 onTap: () {
-                  if (!_isLoggedIn) {
+                  if (!_isPremium && !_isLoggedIn) {
                     _showPremiumDialog(
-                      title: "Compress PDF/Images",
-                      message: "Unlock PDF and image compression feature. Login to continue! 🚀",
+                      title: _t('compress_feature_title'),
+                      message: _t('compress_feature_msg'),
                     );
                   } else {
                     Navigator.push(context, MaterialPageRoute(builder: (context) => const CompressionScreen()));
@@ -1439,17 +1907,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: _buildBentoCard(
                 context: context,
-                title: "QR Scanner",
-                subtitle: "Scan codes",
+                title: _t('qr_scanner'),
+                subtitle: _t('scan_codes'),
                 icon: Icons.qr_code_scanner_rounded,
                 color: const Color(0xFFF43F5E),
                 isNew: true,
-                isLocked: !_isLoggedIn,
+                isLocked: !_isPremium && !_isLoggedIn,
                 onTap: () {
-                  if (!_isLoggedIn) {
+                  if (!_isPremium && !_isLoggedIn) {
                     _showPremiumDialog(
-                      title: "QR Scanner",
-                      message: "Unlock QR and Barcode scanning. Login to continue! 🚀",
+                      title: _t('qr_scanner_title'),
+                      message: _t('qr_scanner_msg'),
                     );
                   } else {
                     Navigator.push(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
@@ -1531,13 +1999,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                "Recent Documents",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+              Text(
+                _t('recent_documents'),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5),
               ),
               TextButton(
                 onPressed: () => setState(() => _selectedIndex = 2),
-                child: const Text("See All"),
+                child: Text(_t('see_all')),
               ),
             ],
           ),
@@ -1618,9 +2086,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     bottomLeft: Radius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  "NEW",
-                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                child: Text(
+                  _t('new_tag'),
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -1630,6 +2098,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _recentUI({bool isHome = false}) {
+    List<File> filteredFiles = pdfFiles.where((file) {
+      final fileName = file.path.split(Platform.pathSeparator).last.toLowerCase();
+      return fileName.contains(_searchQuery.toLowerCase());
+    }).toList();
+
     if (_isLoadingPdfs) {
       return ListView.builder(
         shrinkWrap: isHome,
@@ -1650,7 +2123,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       );
     }
 
-    if (pdfFiles.isEmpty) {
+    if (filteredFiles.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 40),
@@ -1664,14 +2137,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  Icons.folder_open_rounded,
+                  _searchQuery.isEmpty ? Icons.folder_open_rounded : Icons.search_off_rounded,
                   size: 80,
                   color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
                 ),
               ),
               const SizedBox(height: 24),
               Text(
-                "No Documents Yet",
+                _searchQuery.isEmpty ? "No Documents Yet" : "No Results Found",
                 style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -1681,7 +2154,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 8),
               Text(
-                "Your scanned PDFs will appear here.\nStart by tapping 'Scan Document' above.",
+                _searchQuery.isEmpty 
+                  ? "Your scanned PDFs will appear here.\nStart by tapping 'Scan Document' above."
+                  : "Try a different search term.",
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
                   color: Theme.of(context).colorScheme.secondary,
@@ -1698,9 +2173,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       padding: isHome ? EdgeInsets.zero : const EdgeInsets.all(10),
       shrinkWrap: isHome,
       physics: isHome ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
-      itemCount: isHome ? (pdfFiles.length > 5 ? 5 : pdfFiles.length) : pdfFiles.length,
+      itemCount: isHome ? (filteredFiles.length > 5 ? 5 : filteredFiles.length) : filteredFiles.length,
       itemBuilder: (context, index) {
-        final file = pdfFiles[index];
+        final file = filteredFiles[index];
         final isSelected = selectedPaths.contains(file.path);
         final stats = file.statSync();
         final size = (stats.size / 1024).toStringAsFixed(1);
@@ -1938,6 +2413,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 _buildActionItem(
                   context,
+                  icon: Icons.text_snippet_rounded,
+                  title: "Extract Text (OCR)",
+                  color: Colors.pink,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _extractTextFromSelected(context, specificFile: file);
+                  },
+                ),
+                _buildActionItem(
+                  context,
                   icon: Icons.edit_rounded,
                   title: "Edit & Sign",
                   color: Colors.orange,
@@ -2020,6 +2505,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               title: Text(folder),
               onTap: () async {
                 await StorageService.updateDocumentFolder(file.path, folder);
+                if (_isLoggedIn) {
+                  await cloudService.updateMetadata(file.path.split(Platform.pathSeparator).last, folder: folder);
+                }
                 Navigator.pop(context);
                 loadPdfPaths();
               },
@@ -2111,7 +2599,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _editAndSignDocument(File file) async {
-    if (!_isLoggedIn) {
+    if (!_isPremium && !_isLoggedIn) {
       _showPremiumDialog(
         title: "Premium Feature",
         message: "Editing and Signing is reserved for premium users. Login to unlock! 🚀",
@@ -2205,6 +2693,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         // Update storage and UI
         await StorageService.removeDocumentPath(file.path);
         await StorageService.saveDocumentPath(newPath);
+        
+        if (_isLoggedIn) {
+          // Firebase Storage doesn't support rename, so we delete and re-upload
+          await cloudService.deleteFromCloud(file.path.split(Platform.pathSeparator).last);
+          await cloudService.uploadPdf(File(newPath));
+        }
+
         await loadPdfPaths();
         
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Renamed successfully")));
@@ -2244,22 +2739,78 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
-        title: Text(
-          isSelectionMode ? "${selectedPaths.length} Selected" : "PDF Scanner Pro",
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        leading: isSelectionMode ? IconButton(
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => setState(() {
+            isSelectionMode = false;
+            selectedPaths.clear();
+          }),
+        ) : (_isSearching ? IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => setState(() {
+            _isSearching = false;
+            _searchQuery = "";
+          }),
+        ) : null),
+        title: _isSearching 
+          ? TextField(
+              autofocus: true,
+              style: GoogleFonts.poppins(fontSize: 16),
+              decoration: InputDecoration(
+                hintText: "Search documents...",
+                border: InputBorder.none,
+                hintStyle: GoogleFonts.poppins(color: Colors.grey),
+              ),
+              onChanged: (value) => setState(() => _searchQuery = value),
+            )
+          : Text(
+              isSelectionMode ? "${selectedPaths.length} Selected" : "PDF Scanner Pro",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+            ),
         actions: [
           if (isSelectionMode) ...[
-            IconButton(icon: const Icon(Icons.drive_file_move_rounded), onPressed: () => _bulkMoveToFolder(context)),
-            IconButton(icon: const Icon(Icons.merge_type), onPressed: () => mergeSelectedPDFs(context))
+            IconButton(
+              icon: Icon(selectedPaths.length == pdfFiles.length ? Icons.deselect_rounded : Icons.select_all_rounded),
+              tooltip: selectedPaths.length == pdfFiles.length ? "Deselect All" : "Select All",
+              onPressed: () {
+                setState(() {
+                  if (selectedPaths.length == pdfFiles.length) {
+                    selectedPaths.clear();
+                    isSelectionMode = false;
+                  } else {
+                    selectedPaths.addAll(pdfFiles.map((e) => e.path));
+                  }
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.drive_file_move_rounded), 
+              tooltip: "Move",
+              onPressed: () => _bulkMoveToFolder(context)
+            ),
+            IconButton(
+              icon: const Icon(Icons.merge_type), 
+              tooltip: "Merge",
+              onPressed: () => mergeSelectedPDFs(context)
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent), 
+              tooltip: "Delete",
+              onPressed: () => _bulkDelete(context)
+            ),
           ] else ...[
+            if (!_isSearching)
+              IconButton(
+                icon: const Icon(Icons.search_rounded),
+                onPressed: () => setState(() => _isSearching = true),
+              ),
+            IconButton(icon: const Icon(Icons.sort_rounded), onPressed: _showSortDialog),
             IconButton(icon: const Icon(Icons.translate_rounded), onPressed: _showLanguageDialog),
             IconButton(
                 icon: Icon(widget.themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode),
@@ -2281,10 +2832,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Column(
             children: [
               Expanded(child: _selectedIndex == 0 ? _homeUI() : (_selectedIndex == 1 ? DocumentsScreen(
+                pdfFiles: pdfFiles,
                 isSelectionMode: isSelectionMode,
                 selectedPaths: selectedPaths,
                 onSelectionModeChanged: (val) => setState(() => isSelectionMode = val),
                 onSelectionChanged: (val) => setState(() => selectedPaths = val),
+                onShowActions: (file, index) => _showDocumentActions(context, file, index),
+                onRefresh: loadPdfPaths,
               ) : _recentUI())),
               if (_isAdLoaded && _bannerAd != null)
                 Container(
@@ -2295,6 +2849,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
             ],
           ),
+          if (_isBulkProcessing)
+            Container(
+              color: Colors.black.withValues(alpha: 0.3),
+              child: const Center(
+                child: Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text("Processing...", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_selectedIndex == 0 && _blinkController.isAnimating)
             Positioned(
               bottom: 20,
@@ -2380,17 +2953,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 }
 
 class DocumentsScreen extends StatefulWidget {
+  final List<File> pdfFiles;
   final bool isSelectionMode;
   final Set<String> selectedPaths;
   final Function(bool) onSelectionModeChanged;
   final Function(Set<String>) onSelectionChanged;
+  final Function(File, int) onShowActions;
+  final Future<void> Function() onRefresh;
 
   const DocumentsScreen({
     super.key,
+    required this.pdfFiles,
     required this.isSelectionMode,
     required this.selectedPaths,
     required this.onSelectionModeChanged,
     required this.onSelectionChanged,
+    required this.onShowActions,
+    required this.onRefresh,
   });
 
   @override
@@ -2426,13 +3005,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
   void _filterDocuments() {
     final query = _searchController.text.toLowerCase();
     setState(() {
-      filteredList = pdfList.where((file) {
+      filteredList = widget.pdfFiles.where((file) {
         final fileName = file.path.split(Platform.pathSeparator).last.toLowerCase();
         final matchesQuery = fileName.contains(query);
         
         if (selectedFolder == "All") return matchesQuery;
         
-        // Use cached metadata
         return matchesQuery && _folderCache[file.path] == selectedFolder;
       }).toList();
     });
@@ -2440,28 +3018,39 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
 
   Map<String, String> _folderCache = {};
 
-  Future<void> _loadPdfs() async {
-    setState(() => isLoading = true);
-    try {
-      final files = await StorageService.getAllPdfs();
-      
-      // Pre-cache folders
-      Map<String, String> cache = {};
-      for (var file in files) {
-        cache[file.path] = await StorageService.getDocumentFolder(file.path);
-      }
+  @override
+  void didUpdateWidget(DocumentsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pdfFiles != oldWidget.pdfFiles) {
+      _updateFolderCache();
+    }
+  }
 
+  Future<void> _updateFolderCache() async {
+    Map<String, String> cache = {};
+
+    // Use Future.wait to parallelize folder lookups for significantly better performance
+    final results = await Future.wait(
+      widget.pdfFiles.map((file) async {
+        final folder = await StorageService.getDocumentFolder(file.path);
+        return MapEntry(file.path, folder);
+      })
+    );
+    
+    cache = Map.fromEntries(results);
+
+    if (mounted) {
       setState(() {
-        pdfList = files;
         _folderCache = cache;
-        filteredList = files;
-        isLoading = false;
         _filterDocuments();
       });
-    } catch (e) {
-      debugPrint("Error loading PDFs: $e");
-      setState(() => isLoading = false);
     }
+  }
+
+  Future<void> _loadPdfs() async {
+    setState(() => isLoading = true);
+    await _updateFolderCache();
+    setState(() => isLoading = false);
   }
 
   void _createNewFolder() {
@@ -2516,8 +3105,11 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
               title: Text(folder),
               onTap: () async {
                 await StorageService.updateDocumentFolder(file.path, folder);
+                if (FirebaseAuth.instance.currentUser != null) {
+                  await _cloudService.updateMetadata(file.path.split(Platform.pathSeparator).last, folder: folder);
+                }
                 Navigator.pop(context);
-                _loadPdfs();
+                await widget.onRefresh();
               },
             )),
           ],
@@ -2548,7 +3140,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
               }
               if (mounted) {
                 Navigator.pop(context);
-                _loadPdfs();
+                await widget.onRefresh();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Deleted successfully 🗑️")),
                 );
@@ -2733,7 +3325,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
 
   Widget _buildFileList() {
     return RefreshIndicator(
-      onRefresh: _loadPdfs,
+      onRefresh: widget.onRefresh,
       color: const Color(0xFF4F46E5),
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -2847,29 +3439,24 @@ class _DocumentsScreenState extends State<DocumentsScreen> with SingleTickerProv
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        "$size KB • ${stats.modified.day}/${stats.modified.month}",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+                      Expanded(
+                        child: Text(
+                          "$size KB • ${stats.modified.day}/${stats.modified.month}",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
                   trailing: widget.isSelectionMode
                       ? null
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.share_rounded, color: Color(0xFF4F46E5), size: 20),
-                              onPressed: () => Share.shareXFiles([XFile(file.path)]),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.drive_file_move_outlined, color: Color(0xFF64748B), size: 20),
-                              onPressed: () => _showMoveToFolderDialog(file),
-                            ),
-                          ],
+                      : IconButton(
+                          icon: const Icon(Icons.more_vert_rounded, color: Colors.grey),
+                          onPressed: () => widget.onShowActions(file, index),
                         ),
                 ),
               ),

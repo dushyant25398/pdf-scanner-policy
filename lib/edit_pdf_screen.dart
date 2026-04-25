@@ -362,7 +362,7 @@ class _EditPdfScreenState extends State<EditPdfScreen> {
         child: Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.blue.withOpacity(0.5), width: 1),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.5), width: 1),
           ),
           child: Stack(
             clipBehavior: Clip.none,

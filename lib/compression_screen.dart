@@ -125,12 +125,13 @@ class _CompressionScreenState extends State<CompressionScreen> {
     final bytes = await _selectedFile!.readAsBytes();
     final sf.PdfDocument document = sf.PdfDocument(inputBytes: bytes);
     
+    // Configure compression level
+    document.compressionLevel = _quality <= 0.3 
+        ? sf.PdfCompressionLevel.best 
+        : (_quality <= 0.6 ? sf.PdfCompressionLevel.normal : sf.PdfCompressionLevel.belowNormal);
+    
     final tempDir = await getTemporaryDirectory();
     final targetPath = "${tempDir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.pdf";
-    
-    // In Syncfusion PDF, we can use different compression levels if available, 
-    // or just resave with standard optimization.
-    // For more aggressive PDF compression, one would usually downscale images within the PDF.
     
     final List<int> compressedBytes = await document.save();
     _compressedFile = File(targetPath);
@@ -169,8 +170,15 @@ class _CompressionScreenState extends State<CompressionScreen> {
       final fileName = _compressedFile!.path.split(Platform.pathSeparator).last;
       Directory? downloadsDir;
       if (Platform.isAndroid) {
+        // Use a more robust way to get downloads folder for Android
         downloadsDir = Directory('/storage/emulated/0/Download');
-        if (!await downloadsDir.exists()) downloadsDir = await getExternalStorageDirectory();
+        if (!await downloadsDir.exists()) {
+          final externalDir = await getExternalStorageDirectory();
+          if (externalDir != null) {
+            // Fallback to app-specific external directory if standard Download is inaccessible
+            downloadsDir = externalDir;
+          }
+        }
       } else {
         downloadsDir = await getDownloadsDirectory();
       }
